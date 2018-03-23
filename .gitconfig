@@ -1,0 +1,22 @@
+[filter "lfs"]
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+[user]
+	name = Pierre Hennequart
+	email = pierre@janalis.com
+[credential]
+	helper = store
+[core]
+	excludesfile = /Users/pierre/.gitignore_global
+	quotepath = false
+	editor = subl -n -w
+[push]
+	default = matching
+[diff]
+    tool = opendiff
+[difftool]
+    prompt = false
+[difftool "opendiff"]
+    cmd = /usr/bin/opendiff \"$LOCAL\" \"$REMOTE\" -merge \"$MERGED\" | cat

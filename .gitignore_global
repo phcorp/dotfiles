@@ -1,0 +1,14 @@
+# Intellij' IDEA project files
+.idea/
+
+# Fontconfig
+.cache/
+
+# Mac OSX crap
+.DS_Store
+
+# Node modules
+node_modules
+
+# Sass
+.sass-cache/
