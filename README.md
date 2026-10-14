@@ -71,6 +71,7 @@ is launched or signed in during provisioning.
 | `mutekey` | MuteKey (Mac App Store) | Microphone toggle using PulseAudio/PipeWire |
 | `sequel-ace` | Sequel Ace | DBeaver Community |
 | `stats` | Stats | Mission Center |
+| `cmux` | cmux (macOS 14+) | WezTerm terminal/multiplexer |
 
 Official [Claude](https://claude.com/download) and
 [ChatGPT/Codex](https://chatgpt.com/download) Linux desktop releases are currently
@@ -86,6 +87,12 @@ public keys. Updating these downloads to a new release requires a reviewed
 manifest update and repository synchronization. An existing newer native
 installation is retained. Credentials and application settings never enter
 these manifests or the dotfiles repository.
+
+[cmux](https://cmux.com/docs/getting-started) uses its bundled CLI on macOS.
+Linux selects [WezTerm](https://wezterm.org/install/linux.html) as a stable
+terminal/multiplexer alternative; cmux-specific APIs, embedded-browser features,
+and agent integrations are not reproduced. Its separate Linux browser/nightly
+product is not installed by this profile.
 
 Linux Flatpak apps use a signed Flathub remote and per-user installations. Shared
 Flatpak runtimes and the remote are retained on removal. Native GUI installers

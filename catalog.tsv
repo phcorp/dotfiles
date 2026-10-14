@@ -49,3 +49,4 @@ hoppscotch	hoppscotch	cask:hoppscotch	desktop:hoppscotch	desktop:hoppscotch	desk
 mutekey	mutekey	mas:1509590766	desktop:mutekey	desktop:mutekey	desktop
 sequel-ace	sequel-ace	cask:sequel-ace	flatpak:io.dbeaver.DBeaverCommunity	flatpak:io.dbeaver.DBeaverCommunity	desktop
 stats	stats	cask:stats	flatpak:io.missioncenter.MissionCenter	flatpak:io.missioncenter.MissionCenter	desktop
+cmux	cmux	cask:cmux	flatpak:org.wezfurlong.wezterm	flatpak:org.wezfurlong.wezterm	desktop

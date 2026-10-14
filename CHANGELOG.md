@@ -1,5 +1,10 @@
 # Changelog
 
+## cmux
+
+- Add cmux installation, updates, and owned-only removal on macOS, preserving
+  existing apps and exposing the bundled CLI. Use WezTerm as the Linux equivalent.
+
 ## Desktop application lifecycle
 
 - Add requested desktop apps and documented Linux equivalents to the catalog.

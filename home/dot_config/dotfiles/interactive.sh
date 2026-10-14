@@ -117,3 +117,4 @@ hoppscotch() { _dotfiles_tool hoppscotch hoppscotch "$@"; }
 mutekey() { _dotfiles_tool mutekey mutekey "$@"; }
 sequel-ace() { _dotfiles_tool sequel-ace sequel-ace "$@"; }
 stats() { _dotfiles_tool stats stats "$@"; }
+cmux() { _dotfiles_tool cmux cmux "$@"; }

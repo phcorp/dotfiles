@@ -55,7 +55,7 @@ _tools_alias() {
             _tools_prefix=$(brew --prefix "$_tools_formula" 2>/dev/null) || return 0
             _tools_target=$_tools_prefix/bin/$1
             [ -x "$_tools_target" ] || return 0 ;;
-        code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats)
+        code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats|cmux)
             [ "$(uname -s)" = Darwin ] || return 0
             _tools_desktop_alias=1
             case $1 in
@@ -75,6 +75,7 @@ _tools_alias() {
                 mutekey) _tools_app=MuteKey.app; _tools_app_binary=Contents/MacOS/MuteKey ;;
                 sequel-ace) _tools_app='Sequel Ace.app'; _tools_app_binary='Contents/MacOS/Sequel Ace' ;;
                 stats) _tools_app=Stats.app; _tools_app_binary=Contents/MacOS/Stats ;;
+                cmux) _tools_app=cmux.app; _tools_app_binary=Contents/Resources/bin/cmux ;;
 
             esac
             _tools_target=/Applications/$_tools_app/$_tools_app_binary
@@ -245,7 +246,7 @@ _tools_change() (
                     _tools_link=$(readlink "$_tools_bin/$_tools_id")
                     case $_tools_link in */fdfind|*/batcat|*/libpq/bin/psql|*/mysql-client/bin/mysql) rm "$_tools_bin/$_tools_id" ;; esac
                 fi ;;
-                code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats)
+                code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats|cmux)
                     _tools_remove_app_shim "$_tools_id" ;;
             esac ;;
     esac
