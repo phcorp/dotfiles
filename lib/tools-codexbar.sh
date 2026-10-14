@@ -77,15 +77,17 @@ _codexbar_owned_clean() {
     while IFS="$(printf '\t')" read -r _cb_digest _cb_path; do
         case $_cb_path in "$_cb_bin/codexbar"|"$_cb_bin/codexbar-desktop"|"$_cb_desktop_entry") ;; *) return 1 ;; esac
         _tools_safe_ancestor "$_cb_path" || return
-        [ ! -L "$_cb_path" ] && [ -f "$_cb_path" ] && [ "$(_tools_hash "$_cb_path")" = "$_cb_digest" ] || {
-            printf '%s\n' 'CodexBar launcher changed; preserving it for manual review.' >&2; return 1;
-        }
+        if [ -L "$_cb_path" ] || [ ! -f "$_cb_path" ] || [ "$(_tools_hash "$_cb_path")" != "$_cb_digest" ]; then
+            printf '%s\n' 'CodexBar launcher changed; preserving it for manual review.' >&2; return 1
+        fi
     done < "$_cb_files"
 }
 _codexbar_write_launcher() {
     _cb_target=$1; _cb_executable=$2
     _tools_safe_ancestor "$_cb_target" || return
-    [ ! -e "$_cb_target" ] && [ ! -L "$_cb_target" ] || { printf '%s\n' 'CodexBar launcher already exists; preserving it.' >&2; return 1; }
+    if [ -e "$_cb_target" ] || [ -L "$_cb_target" ]; then
+        printf '%s\n' 'CodexBar launcher already exists; preserving it.' >&2; return 1
+    fi
     _cb_quoted=$(printf '%s' "$_cb_executable" | sed "s/'/'\\\\''/g")
     printf '%s\n' '#!/bin/sh' "exec '$_cb_quoted' "'"$@"' > "$_cb_target" || return
     chmod 755 "$_cb_target" || return
@@ -115,7 +117,9 @@ codexbar_change() (
     case $(uname -m) in x86_64|amd64) _cb_arch=amd64 ;; aarch64|arm64) _cb_arch=arm64 ;; esac
     if [ "$_cb_existing" = 0 ]; then
         for _cb_entry in "$_cb_bin/codexbar" "$_cb_bin/codexbar-desktop" "$_cb_desktop_entry"; do
-            [ ! -e "$_cb_entry" ] && [ ! -L "$_cb_entry" ] || { printf '%s\n' 'Existing CodexBar launcher preserved.' >&2; return 1; }
+            if [ -e "$_cb_entry" ] || [ -L "$_cb_entry" ]; then
+                printf '%s\n' 'Existing CodexBar launcher preserved.' >&2; return 1
+            fi
         done
     fi
     _cb_work=$(mktemp -d "$DOTFILES_STATE/codexbar-download.XXXXXX") || return

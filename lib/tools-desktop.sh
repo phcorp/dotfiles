@@ -183,7 +183,9 @@ _desktop_appimage_install() (
     _desktop_launcher=$_desktop_bin/hoppscotch
     [ ! -L "$_desktop_launcher" ] || return 1
     if [ -e "$_desktop_launcher" ]; then
-        [ -f "$DOTFILES_STATE/desktop/hoppscotch-launcher.sha256" ] && [ "$(_tools_hash "$_desktop_launcher")" = "$(cat "$DOTFILES_STATE/desktop/hoppscotch-launcher.sha256")" ] || { printf '%s\n' 'Preserving an existing Hoppscotch launcher.' >&2; return 1; }
+        if [ ! -f "$DOTFILES_STATE/desktop/hoppscotch-launcher.sha256" ] || [ "$(_tools_hash "$_desktop_launcher")" != "$(cat "$DOTFILES_STATE/desktop/hoppscotch-launcher.sha256")" ]; then
+            printf '%s\n' 'Preserving an existing Hoppscotch launcher.' >&2; return 1
+        fi
     fi
     if [ -e "$_desktop_target" ]; then
         [ -f "$DOTFILES_STATE/desktop/hoppscotch-image.sha256" ] && [ "$(_tools_hash "$_desktop_target")" = "$(cat "$DOTFILES_STATE/desktop/hoppscotch-image.sha256")" ] || return 1
@@ -289,7 +291,9 @@ _desktop_can_write_owned() (
     [ ! -L "$_desktop_check_path" ] && [ ! -d "$_desktop_check_path" ] || return 1
     if [ -e "$_desktop_check_path" ]; then
         _desktop_recorded=$(awk -F '\t' -v id="$_desktop_check_id" -v path="$_desktop_check_path" '$1==id && $3==path {sha=$2} END {print sha}' "$DOTFILES_STATE/desktop-files.tsv" 2>/dev/null)
-        [ -n "$_desktop_recorded" ] && [ "$(_tools_hash "$_desktop_check_path")" = "$_desktop_recorded" ] || { printf '%s\n' 'Preserving an existing or modified desktop file.' >&2; return 1; }
+        if [ -z "$_desktop_recorded" ] || [ "$(_tools_hash "$_desktop_check_path")" != "$_desktop_recorded" ]; then
+            printf '%s\n' 'Preserving an existing or modified desktop file.' >&2; return 1
+        fi
     fi
 )
 _desktop_transaction_begin() {
@@ -316,7 +320,9 @@ _desktop_transaction_finish() {
         while IFS= read -r _desktop_transaction_path; do
             _desktop_transaction_index=$((_desktop_transaction_index + 1))
             _tools_safe_ancestor "$_desktop_transaction_path" || { _desktop_rollback_failed=1; continue; }
-            [ ! -L "$_desktop_transaction_path" ] && [ ! -d "$_desktop_transaction_path" ] || { _desktop_rollback_failed=1; continue; }
+            if [ -L "$_desktop_transaction_path" ] || [ -d "$_desktop_transaction_path" ]; then
+                _desktop_rollback_failed=1; continue
+            fi
             if [ -f "$_desktop_transaction_dir/$_desktop_transaction_index" ]; then
                 cp -p "$_desktop_transaction_dir/$_desktop_transaction_index" "$_desktop_transaction_path" || { _desktop_rollback_failed=1; printf '%s\n' 'Desktop rollback needs manual recovery from private transaction backup.' >&2; }
             else rm -f "$_desktop_transaction_path" || _desktop_rollback_failed=1; fi
