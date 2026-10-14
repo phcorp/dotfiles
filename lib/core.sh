@@ -391,11 +391,12 @@ ci_passed() {
 
 sync_repository() {
     check_owned || return 1
+    settings_check_origin "$DOTFILES_SOURCE" || return
     _source_status=$(git -c core.fsmonitor=false -C "$DOTFILES_SOURCE" status --porcelain) || { fail 'Cannot inspect source status; sync stopped.'; return 1; }
     [ -z "$_source_status" ] || { fail 'Source checkout has uncommitted changes; sync stopped.'; return 1; }
     _old=$(git -C "$DOTFILES_SOURCE" rev-parse HEAD)
-    GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DOTFILES_SOURCE" fetch --quiet origin master || { fail 'Fetch failed; current configuration retained.'; return 1; }
-    _next=$(git -C "$DOTFILES_SOURCE" rev-parse origin/master)
+    GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DOTFILES_SOURCE" fetch --quiet origin "$DOTFILES_BRANCH" || { fail 'Fetch failed; current configuration retained.'; return 1; }
+    _next=$(git -C "$DOTFILES_SOURCE" rev-parse "refs/remotes/origin/$DOTFILES_BRANCH")
     git -C "$DOTFILES_SOURCE" merge-base --is-ancestor "$_old" "$_next" || { fail 'History diverged; manual review required.'; return 1; }
     ci_passed "$_next" || { fail 'Successful Verify CI unavailable; current configuration retained.'; return 1; }
     [ "$_old" != "$_next" ] || { say 'Already synchronized.'; return 0; }
@@ -411,15 +412,19 @@ sync_repository() {
     commit_transaction || return
     say "Synchronized revision $_next."
 }
-publish_repository() {
+publish_repository() (
     [ $# -gt 0 ] || { fail 'Usage: dotfiles publish "commit message"'; return 1; }
+    settings_check_origin "$DOTFILES_SOURCE" || return
+    [ "$(git -C "$DOTFILES_SOURCE" symbolic-ref --short HEAD)" = "$DOTFILES_BRANCH" ] || { fail 'Source is not on the configured publication branch; review it before publishing.'; return 1; }
+    settings_publish_git_env || return
     command -v gitleaks >/dev/null 2>&1 || tools_ensure gitleaks || { fail 'Gitleaks is required before publishing.'; return 1; }
-    "$DOTFILES_SOURCE/scripts/check-public.sh"
-    (cd "$DOTFILES_SOURCE" && gitleaks dir --redact --no-banner . && gitleaks git --redact --no-banner)
-    git -C "$DOTFILES_SOURCE" add -- .
-    git -C "$DOTFILES_SOURCE" -c user.name=phcorp -c user.email=725023+phcorp@users.noreply.github.com commit -m "$1"
-    GIT_TERMINAL_PROMPT=0 git -C "$DOTFILES_SOURCE" push origin master
-}
+    "$DOTFILES_SOURCE/scripts/check-public.sh" || return
+    (cd "$DOTFILES_SOURCE" && gitleaks dir --redact --no-banner . && gitleaks git --redact --no-banner) || return
+    git -C "$DOTFILES_SOURCE" add -- . || return
+    git -C "$DOTFILES_SOURCE" commit -m "$1" || return
+    GIT_TERMINAL_PROMPT=0 git -C "$DOTFILES_SOURCE" push origin "HEAD:refs/heads/$DOTFILES_BRANCH"
+)
+
 doctor() {
     _status=0
     _doctor_lock=$(lock_status "$DOTFILES_STATE/lifecycle.lock")
@@ -531,8 +536,6 @@ main() {
                     fi
                     commit_transaction || return
                     if [ "${DOTFILES_TESTING:-0}" != 1 ] && [ -w "$DOTFILES_SOURCE/.git/config" ]; then
-                        git -C "$DOTFILES_SOURCE" config user.name phcorp
-                        git -C "$DOTFILES_SOURCE" config user.email 725023+phcorp@users.noreply.github.com
                         git -C "$DOTFILES_SOURCE" config core.hooksPath "$DOTFILES_SOURCE/scripts/git-hooks"
                     fi
                     [ "$DOTFILES_SYNC_ENABLE" = 0 ] || sync_enable

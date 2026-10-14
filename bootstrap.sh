@@ -52,9 +52,13 @@ ci_verify_commit() (
     trap 'exit 143' TERM
     _ci_url="https://api.github.com/repos/$_ci_slug/actions/runs?head_sha=$_ci_sha&branch=$_ci_branch_query&event=push&per_page=100"
     if [ -n "${GITHUB_TOKEN:-}" ]; then
+        case $GITHUB_TOKEN in *'
+'*|*"$(printf '\r')"*) printf '%s\n' 'Invalid GitHub authentication token.' >&2; return 1 ;; esac
+        printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" > "$_ci_work/header"
+        chmod 600 "$_ci_work/header"
         curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
             --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
-            --header 'X-GitHub-Api-Version: 2022-11-28' --header "Authorization: Bearer $GITHUB_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' --header "@$_ci_work/header" \
             "$_ci_url" -o "$_ci_work/runs.json" 2>/dev/null
     else
         curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \

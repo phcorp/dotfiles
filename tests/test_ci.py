@@ -36,6 +36,10 @@ class CommitCI(unittest.TestCase):
         curl.write_text(f'#!{sys.executable}\n' + '''import json, os, pathlib, sys
 args = sys.argv[1:]
 pathlib.Path(os.environ['CURL_LOG']).write_text(json.dumps(args))
+for arg in args:
+    if arg.startswith('@'):
+        path = pathlib.Path(arg[1:])
+        pathlib.Path(os.environ['HEADER_LOG']).write_text(json.dumps({'mode': path.stat().st_mode & 0o777, 'content': path.read_text(), 'path': str(path)}))
 if os.environ.get('CURL_FAIL'):
     print('private request diagnostics', file=sys.stderr)
     sys.exit(22)
@@ -43,7 +47,7 @@ pathlib.Path(args[args.index('-o') + 1]).write_bytes(pathlib.Path(os.environ['CI
 ''')
         curl.chmod(0o755)
         self.env = dict(os.environ, HOME=str(self.home), CI_RESPONSE=str(self.response),
-                        CURL_LOG=str(self.log), PATH=str(self.bin) + ':' + os.environ['PATH'])
+                        CURL_LOG=str(self.log), HEADER_LOG=str(self.home / 'header.json'), PATH=str(self.bin) + ':' + os.environ['PATH'])
         for key in ['GITHUB_TOKEN', 'DOTFILES_REPOSITORY', 'DOTFILES_BRANCH', 'DOTFILES_SYNC_SKIP_CI', 'DOTFILES_TESTING']:
             self.env.pop(key, None)
 
@@ -135,3 +139,20 @@ pathlib.Path(args[args.index('-o') + 1]).write_bytes(pathlib.Path(os.environ['CI
             with self.subTest(path=path):
                 self.check({'total_count': 1, 'workflow_runs': [run_record(path=path)]})
         self.check({'total_count': 1, 'workflow_runs': [run_record(path='.github/workflows/verify.yml@other')]}, False)
+
+    def test_authentication_header_is_private_and_absent_from_process_arguments(self):
+        self.env['GITHUB_TOKEN'] = 'fixture-private-token'
+        result = self.check({'total_count': 1, 'workflow_runs': [run_record()]})
+        self.assertNotIn('fixture-private-token', self.log.read_text())
+        self.assertNotIn('fixture-private-token', result.stdout + result.stderr)
+        header = json.loads((self.home / 'header.json').read_text())
+        self.assertEqual(header['mode'], 0o600)
+        self.assertEqual(header['content'], 'Authorization: Bearer fixture-private-token\n')
+        self.assertFalse(pathlib.Path(header['path']).exists())
+
+    def test_authentication_header_injection_is_rejected(self):
+        for token in ['fixture\nOther-Header: bad', 'fixture\rOther-Header: bad']:
+            with self.subTest(token=token):
+                self.env['GITHUB_TOKEN'] = token
+                self.check({'total_count': 1, 'workflow_runs': [run_record()]}, False)
+                self.assertFalse(self.log.exists())
