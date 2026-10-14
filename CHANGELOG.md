@@ -1,5 +1,21 @@
 # Changelog
 
+## Reliability and reuse
+
+- Validate the exact bootstrap revision against successful Verify CI before
+  executing cloned code; reject unavailable, incomplete, and invalid responses.
+- Preview file differences, conflicts, selections, and package plans without
+  modifying private configuration, ownership records, or scheduler state.
+- Recover interrupted apply/update transactions with prior files, backups,
+  selection, ownership, and source revision preserved; explicitly diagnose and
+  reclaim stale locks without removing active or unverifiable owners.
+- Make repository, synchronization branch, and public publication identity
+  configurable without rewriting existing private Git identity settings.
+- Add deterministic CI and actual interruption tests, reproducible startup and
+  prompt measurements, focused guides, and the maintainer-selected MIT license.
+- Retain eager runtime initialization and current prompt behavior: measurements
+  did not justify the proposed prompt consolidation.
+
 ## cmux
 
 - Add cmux installation, updates, and owned-only removal on macOS, preserving
