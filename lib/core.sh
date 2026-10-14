@@ -307,14 +307,9 @@ EOF
 }
 ci_passed() {
     if [ "${DOTFILES_TESTING:-0}" = 1 ] && [ "${DOTFILES_SYNC_SKIP_CI:-0}" = 1 ]; then return 0; fi
-    _sha=$1
-    # Anonymous public API; require the complete Verify workflow, not a single job.
-    curl -fsSL --connect-timeout 10 --max-time 30 \
-        "https://api.github.com/repos/phcorp/dotfiles/actions/runs?head_sha=$_sha&status=completed&per_page=100" \
-        -o "$DOTFILES_STATE/ci.json" || return 1
-    command -v jq >/dev/null 2>&1 || { fail 'jq is required to validate synchronization CI.'; return 1; }
-    jq -e --arg sha "$_sha" '[.workflow_runs[] | select(.name == "Verify" and .path == ".github/workflows/verify.yml" and .event == "push" and .head_branch == "master" and .head_sha == $sha)] | sort_by(.run_number) | last | .conclusion == "success"' "$DOTFILES_STATE/ci.json" >/dev/null
+    ci_verify_commit "$1"
 }
+
 sync_repository() {
     check_owned || return 1
     [ -z "$(git -C "$DOTFILES_SOURCE" status --porcelain)" ] || { fail 'Source checkout has uncommitted changes; sync stopped.'; return 1; }
@@ -426,9 +421,7 @@ main() {
     case $_action in --help|-h|help) usage; return ;; esac
     valid_paths
     if [ "$DOTFILES_DRY_RUN" = 1 ]; then
-        say "Dry run: $_action ${_sub:+$_sub }${_arg:-}${DOTFILES_PROFILES:+ profiles=$DOTFILES_PROFILES}; no files or packages changed."
-        case $_action in install|repair|update) if command -v chezmoi >/dev/null 2>&1; then managed_paths; fi ;; esac
-        return
+        preview; return
     fi
     case $_action in
         tools) setup_state; case $_sub in list) tools_list ;; ensure) tools_ensure "$_arg" ;; install) tools_install "$_arg" ;; update) tools_update "$_arg" ;; remove) tools_remove "$_arg" ;; *) usage; return 1 ;; esac ;;
