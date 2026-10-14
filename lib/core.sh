@@ -326,7 +326,7 @@ sync_repository() {
 }
 publish_repository() {
     [ $# -gt 0 ] || { fail 'Usage: dotfiles publish "commit message"'; return 1; }
-    command -v gitleaks >/dev/null 2>&1 || { fail 'Install gitleaks before publishing.'; return 1; }
+    command -v gitleaks >/dev/null 2>&1 || tools_ensure gitleaks || { fail 'Gitleaks is required before publishing.'; return 1; }
     "$DOTFILES_SOURCE/scripts/check-public.sh"
     (cd "$DOTFILES_SOURCE" && gitleaks dir --redact --no-banner . && gitleaks git --redact --no-banner)
     git -C "$DOTFILES_SOURCE" add -- .

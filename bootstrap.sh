@@ -46,14 +46,18 @@ case $(uname -s) in
             for prefix in /opt/homebrew /usr/local; do [ ! -x "$prefix/bin/brew" ] || PATH=$prefix/bin:$PATH; done
             export PATH
         fi
-        for prerequisite in git curl jq; do command -v "$prerequisite" >/dev/null 2>&1 || brew install "$prerequisite"; done ;;
+        for prerequisite in git curl jq python3; do
+            if ! command -v "$prerequisite" >/dev/null 2>&1; then
+                case $prerequisite in python3) brew install python ;; *) brew install "$prerequisite" ;; esac
+            fi
+        done ;;
     Linux)
         platform=linux
-        if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+        if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
             if command -v apt-get >/dev/null 2>&1; then
                 privileged env DEBIAN_FRONTEND=noninteractive apt-get update
-                privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git curl jq ca-certificates unzip
-            elif command -v dnf >/dev/null 2>&1; then privileged dnf install -y git curl jq ca-certificates unzip
+                privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git curl jq ca-certificates unzip python3
+            elif command -v dnf >/dev/null 2>&1; then privileged dnf install -y git curl jq ca-certificates unzip python3
             else printf '%s\n' 'Supported Linux managers: apt and dnf.' >&2; exit 1; fi
         fi ;;
     *) printf '%s\n' 'Supported systems: macOS and Linux.' >&2; exit 1 ;;
