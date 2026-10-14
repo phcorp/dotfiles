@@ -5,3 +5,6 @@ success_symbol = "[❯](green)"
 error_symbol = "[❯](red)"
 [directory]
 truncation_length = 3
+[gcloud]
+# Cloud account identities remain private and do not belong in the shared prompt.
+disabled = true
