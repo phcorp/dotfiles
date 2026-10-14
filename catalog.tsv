@@ -38,5 +38,14 @@ jetbrains-toolbox	jetbrains-toolbox	cask:jetbrains-toolbox	-	-	desktop
 firefox	firefox	cask:firefox	firefox	firefox	desktop
 chrome	google-chrome	cask:google-chrome	-	-	desktop
 pgadmin	pgadmin4	cask:pgadmin4	-	-	desktop
-orbstack	orb	cask:orbstack	-	-	desktop
+orbstack	orb	cask:orbstack	flatpak:io.podman_desktop.PodmanDesktop	flatpak:io.podman_desktop.PodmanDesktop	desktop
 utm	utmctl	cask:utm	-	-	desktop
+claude-desktop	claude-desktop	cask:claude	desktop:claude-desktop	-	desktop
+chatgpt	chatgpt	cask:chatgpt	desktop:chatgpt	desktop:chatgpt	desktop
+codexbar	codexbar	cask:codexbar	desktop:codexbar	desktop:codexbar	desktop
+cyberduck	cyberduck	cask:cyberduck	flatpak:org.filezillaproject.Filezilla	flatpak:org.filezillaproject.Filezilla	desktop
+github-desktop	github-desktop	cask:github	flatpak:io.github.shiftey.Desktop	flatpak:io.github.shiftey.Desktop	desktop
+hoppscotch	hoppscotch	cask:hoppscotch	desktop:hoppscotch	desktop:hoppscotch	desktop
+mutekey	mutekey	mas:1509590766	desktop:mutekey	desktop:mutekey	desktop
+sequel-ace	sequel-ace	cask:sequel-ace	flatpak:io.dbeaver.DBeaverCommunity	flatpak:io.dbeaver.DBeaverCommunity	desktop
+stats	stats	cask:stats	flatpak:io.missioncenter.MissionCenter	flatpak:io.missioncenter.MissionCenter	desktop

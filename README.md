@@ -35,8 +35,68 @@ Profiles: `shell`, `runtimes`, `php`, `cloud`, `databases`, `desktop`.
 The wizard filters unsupported platform entries. `dotfiles tools list` displays
 the catalog and package mappings. Database profiles install clients, not running
 servers. Docker installs the CLI; install/select a container engine separately
-(OrbStack is an optional macOS desktop choice). Linux desktop support currently
-includes native Firefox; other desktop choices are macOS-only.
+(OrbStack or its Linux equivalent, Podman Desktop, is a desktop choice).
+
+## Desktop apps
+
+Select `desktop` in the wizard or save it with the other profiles you use, then
+choose the wizard's app installation, update, or removal option. Equivalent
+Linux applications retain the catalog ID of the requested macOS application.
+Use `dotfiles apps list` to see the package mappings.
+
+```sh
+dotfiles repair --profiles shell,runtimes,php,cloud,databases,desktop
+dotfiles apps install --non-interactive
+dotfiles apps update hoppscotch --non-interactive
+dotfiles apps remove hoppscotch --non-interactive
+```
+
+`apps install` and `apps update` without an ID operate on selected desktop apps;
+`apps remove` without an ID removes only desktop apps recorded as installed by
+dotfiles. `--dry-run` changes no files or packages. Existing apps are detected
+before installation and are never silently adopted for removal. Normal dotfiles
+uninstallation retains apps; application removal is a separate, explicit action.
+Application data, login sessions, and shared dependencies are retained. No app
+is launched or signed in during provisioning.
+
+| Catalog ID | macOS | Linux |
+| --- | --- | --- |
+| `claude-desktop` | Claude | Official Claude desktop beta on Debian/Ubuntu |
+| `chatgpt` | ChatGPT, including Codex | Official ChatGPT Linux preview |
+| `codexbar` | CodexBar | Official CodexBar desktop |
+| `cyberduck` | Cyberduck | FileZilla (FTP/SFTP; not all Cyberduck cloud backends) |
+| `github-desktop` | GitHub Desktop | Community Linux GitHub Desktop fork |
+| `orbstack` | OrbStack | Podman Desktop and Podman |
+| `hoppscotch` | Hoppscotch | Official desktop: amd64 DEB or AppImage |
+| `mutekey` | MuteKey (Mac App Store) | Microphone toggle using PulseAudio/PipeWire |
+| `sequel-ace` | Sequel Ace | DBeaver Community |
+| `stats` | Stats | Mission Center |
+
+Official [Claude](https://claude.com/download) and
+[ChatGPT/Codex](https://chatgpt.com/download) Linux desktop releases are currently
+beta/preview. Claude requires Ubuntu 22+ or Debian 12+; ChatGPT requires Ubuntu
+24+, Debian 13+, or Fedora 43+. Unsupported platform entries are excluded from
+selection. CodexBar's Linux desktop requires glibc 2.39+ and Qt 6.4+; the official
+CLI remains available on older supported Linux systems. Hoppscotch's published
+Linux desktop binaries currently support amd64 only.
+
+Native downloads are pinned in `lib/tools-desktop.tsv`, with SHA-256 validation;
+Claude and ChatGPT also verify signed vendor repository metadata using pinned
+public keys. Updating these downloads to a new release requires a reviewed
+manifest update and repository synchronization. An existing newer native
+installation is retained. Credentials and application settings never enter
+these manifests or the dotfiles repository.
+
+Linux Flatpak apps use a signed Flathub remote and per-user installations. Shared
+Flatpak runtimes and the remote are retained on removal. Native GUI installers
+require a working graphical desktop to run their apps; headless containers can
+verify installation but cannot exercise their windows. macOS MuteKey requires
+an Apple account signed in to the Mac App Store and may request Apple
+authentication per app. Its installation and update require interactive mode;
+unattended setup reports this requirement instead of opening authentication
+prompts. Existing MuteKey installations are preserved. On Linux, `mutekey`
+toggles the default microphone through `pactl` only when invoked; bind the command
+to a desktop shortcut if desired. Provisioning never changes microphone state.
 
 ## Everyday use
 
@@ -58,8 +118,10 @@ does not install software or contact the repository. Noninteractive scripts use
 normal executable lookup; provision their dependencies explicitly beforehand.
 
 Upstream tools are version/checksum pinned in `lib/tools-upstream.tsv`; native
-packages follow the OS repositories. Tool updates apply only to software
-installed and recorded by dotfiles, and do not run as part of automatic sync.
+packages follow the OS repositories. Explicit updates can also update existing
+apps registered with the supported package manager, without granting removal
+ownership. Apps installed outside that manager retain their original updater.
+Updates do not run as part of automatic sync.
 
 `ls`, `ll`, and `la` use eza when available, with a system `ls` fallback. `sc`
 invokes Symfony's `bin/console` or legacy `app/console` with quoted arguments.

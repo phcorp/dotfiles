@@ -108,3 +108,12 @@ google-chrome() { _dotfiles_tool chrome google-chrome "$@"; }
 pgadmin4() { _dotfiles_tool pgadmin pgadmin4 "$@"; }
 orb() { _dotfiles_tool orbstack orb "$@"; }
 utmctl() { _dotfiles_tool utm utmctl "$@"; }
+claude-desktop() { _dotfiles_tool claude-desktop claude-desktop "$@"; }
+chatgpt() { _dotfiles_tool chatgpt chatgpt "$@"; }
+codexbar() { _dotfiles_tool codexbar codexbar "$@"; }
+cyberduck() { _dotfiles_tool cyberduck cyberduck "$@"; }
+github-desktop() { _dotfiles_tool github-desktop github-desktop "$@"; }
+hoppscotch() { _dotfiles_tool hoppscotch hoppscotch "$@"; }
+mutekey() { _dotfiles_tool mutekey mutekey "$@"; }
+sequel-ace() { _dotfiles_tool sequel-ace sequel-ace "$@"; }
+stats() { _dotfiles_tool stats stats "$@"; }

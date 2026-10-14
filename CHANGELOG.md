@@ -1,5 +1,12 @@
 # Changelog
 
+## Desktop application lifecycle
+
+- Add requested desktop apps and documented Linux equivalents to the catalog.
+- Add wizard and unattended app installation, update, and owned-only removal.
+- Preserve existing applications and app data; keep authentication private.
+- Add signed user-scoped Flatpak support and official native GUI installers.
+
 ## Project-aware prompt
 
 - Show Node, Lua, and AWS context only in relevant projects and subdirectories.

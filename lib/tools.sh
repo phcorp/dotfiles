@@ -1,5 +1,9 @@
 # Cataloged dependency management. Source this file; functions return statuses.
 # shellcheck disable=SC2030,SC2031
+# shellcheck source=/dev/null
+[ ! -r "$DOTFILES_SOURCE/lib/tools-codexbar.sh" ] || . "$DOTFILES_SOURCE/lib/tools-codexbar.sh"
+# shellcheck source=/dev/null
+[ ! -r "$DOTFILES_SOURCE/lib/tools-desktop.sh" ] || . "$DOTFILES_SOURCE/lib/tools-desktop.sh"
 
 _tools_row() {
     case $1 in ''|*[!a-z0-9-]*) return 2 ;; esac
@@ -7,13 +11,41 @@ _tools_row() {
 }
 _tools_field() { printf '%s\n' "$1" | cut -f "$2"; }
 tools_list() { cat "$DOTFILES_SOURCE/catalog.tsv"; }
-_tools_available() {
-    _tools_cmd=$(_tools_field "$1" 2)
-    command -v "$_tools_cmd" >/dev/null 2>&1
-}
+_tools_available() (
+    _tools_available_record=$1
+    _tools_cmd=$(_tools_field "$_tools_available_record" 2)
+    _tools_command_path=$(command -v "$_tools_cmd") || return 1
+    if [ "$(_tools_field "$_tools_available_record" 1)" = codexbar ] && [ "$(uname -s)" = Linux ] && [ -f "$DOTFILES_STATE/codexbar-files.tsv" ]; then
+        _tools_codexbar_digest=$(awk -F '\t' -v path="$_tools_command_path" '$2==path {print $1; exit}' "$DOTFILES_STATE/codexbar-files.tsv")
+        if [ -n "$_tools_codexbar_digest" ] && [ -f "$_tools_command_path" ] && [ ! -L "$_tools_command_path" ] && [ "$(_tools_hash "$_tools_command_path")" = "$_tools_codexbar_digest" ]; then
+            codexbar_exists codexbar || return 1
+        fi
+    fi
+    # A generated Flatpak launcher is available only while its app is installed.
+    if [ -f "$DOTFILES_STATE/aliases.tsv" ] && [ -f "$_tools_command_path" ] && [ ! -L "$_tools_command_path" ]; then
+        _tools_available_id=$(_tools_field "$_tools_available_record" 1)
+        _tools_alias_digest=$(awk -F '\t' -v id="$_tools_available_id" -v cmd="$_tools_cmd" '$1==id && $2==cmd {digest=$3} END {print digest}' "$DOTFILES_STATE/aliases.tsv")
+        if [ -n "$_tools_alias_digest" ] && [ "$(_tools_hash "$_tools_command_path")" = "$_tools_alias_digest" ]; then
+            if [ "$(uname -s)" = Darwin ]; then _tools_available_column=3
+            elif command -v apt-get >/dev/null 2>&1; then _tools_available_column=4
+            else _tools_available_column=5; fi
+            _tools_package=$(_tools_field "$_tools_available_record" "$_tools_available_column")
+            case $_tools_package in
+                flatpak:*) _tools_package=${_tools_package#flatpak:}; _tools_flatpak_scope || return 1 ;;
+                desktop:*|mas:*) desktop_exists "$_tools_available_id" || return 1 ;;
+                cask:*) _tools_alias_probe=1; _tools_alias "$_tools_available_id" || return 1 ;;
+            esac
+        fi
+    fi
+    return 0
+)
 _tools_alias() {
     _tools_paths_safe || return
     _tools_alias_command=$1
+    if [ "$(uname -s)" = Linux ]; then
+        _tools_flatpak_alias "$1" || return
+        if command -v desktop_alias >/dev/null 2>&1; then desktop_alias "$1" || return; fi
+    fi
     _tools_desktop_alias=0
     case $1 in
         fd) _tools_alt=fdfind ;; bat) _tools_alt=batcat ;;
@@ -23,7 +55,7 @@ _tools_alias() {
             _tools_prefix=$(brew --prefix "$_tools_formula" 2>/dev/null) || return 0
             _tools_target=$_tools_prefix/bin/$1
             [ -x "$_tools_target" ] || return 0 ;;
-        code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm)
+        code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats)
             [ "$(uname -s)" = Darwin ] || return 0
             _tools_desktop_alias=1
             case $1 in
@@ -34,14 +66,33 @@ _tools_alias() {
                 pgadmin) _tools_app='pgAdmin 4.app'; _tools_app_binary='Contents/MacOS/pgAdmin 4'; _tools_alias_command=pgadmin4 ;;
                 orbstack) _tools_app=OrbStack.app; _tools_app_binary=Contents/MacOS/bin/orb; _tools_alias_command=orb ;;
                 utm) _tools_app=UTM.app; _tools_app_binary=Contents/MacOS/utmctl; _tools_alias_command=utmctl ;;
+                claude-desktop) _tools_app=Claude.app; _tools_app_binary=Contents/MacOS/Claude ;;
+                chatgpt) _tools_app=ChatGPT.app; _tools_app_binary=Contents/MacOS/ChatGPT ;;
+                codexbar) _tools_app=CodexBar.app; _tools_app_binary=Contents/MacOS/CodexBar ;;
+                cyberduck) _tools_app=Cyberduck.app; _tools_app_binary=Contents/MacOS/Cyberduck ;;
+                github-desktop) _tools_app='GitHub Desktop.app'; _tools_app_binary='Contents/MacOS/GitHub Desktop' ;;
+                hoppscotch) _tools_app=Hoppscotch.app; _tools_app_binary=Contents/MacOS/hoppscotch-desktop ;;
+                mutekey) _tools_app=MuteKey.app; _tools_app_binary=Contents/MacOS/MuteKey ;;
+                sequel-ace) _tools_app='Sequel Ace.app'; _tools_app_binary='Contents/MacOS/Sequel Ace' ;;
+                stats) _tools_app=Stats.app; _tools_app_binary=Contents/MacOS/Stats ;;
+
             esac
             _tools_target=/Applications/$_tools_app/$_tools_app_binary
             if [ ! -x "$_tools_target" ]; then _tools_target=$HOME/Applications/$_tools_app/$_tools_app_binary; fi
-            [ -x "$_tools_target" ] || return 0 ;;
+            if [ ! -x "$_tools_target" ]; then [ "${_tools_alias_probe:-0}" != 1 ]; return; fi ;;
         *) return 0 ;;
     esac
+    [ "${_tools_alias_probe:-0}" != 1 ] || return 0
     case $1 in fd|bat) _tools_target=$(command -v "$_tools_alt") || return 0 ;; esac
     _tools_bin=${DOTFILES_BIN:-$HOME/.local/bin}
+    if [ "$_tools_desktop_alias" = 1 ] && [ -f "$DOTFILES_STATE/aliases.tsv" ] && [ -f "$_tools_bin/$_tools_alias_command" ] && [ ! -L "$_tools_bin/$_tools_alias_command" ]; then
+        _tools_existing_app_digest=$(awk -F '\t' -v id="$1" -v cmd="$_tools_alias_command" '$1==id && $2==cmd {digest=$3} END {print digest}' "$DOTFILES_STATE/aliases.tsv")
+        if [ -n "$_tools_existing_app_digest" ] && [ "$(_tools_hash "$_tools_bin/$_tools_alias_command")" = "$_tools_existing_app_digest" ]; then
+            _tools_quoted_target=$(printf '%s' "$_tools_target" | sed "s/'/'\\\\''/g")
+            _tools_expected_app_line="exec '$_tools_quoted_target' "'"$@"'
+            if ! grep -Fxq "$_tools_expected_app_line" "$_tools_bin/$_tools_alias_command"; then _tools_remove_app_shim "$1" || return; fi
+        fi
+    fi
     if ! command -v "$_tools_alias_command" >/dev/null 2>&1 && [ ! -e "$_tools_bin/$_tools_alias_command" ] && [ ! -L "$_tools_bin/$_tools_alias_command" ]; then
         mkdir -p "$_tools_bin" || return
         if [ "$_tools_desktop_alias" = 1 ]; then
@@ -62,6 +113,19 @@ _tools_manager() {
         *) printf '%s\n' 'Unsupported operating system.' >&2; return 1 ;;
     esac
     _tools_package=$(_tools_field "$_tools_record" "$_tools_column")
+    case $_tools_package in
+        desktop:*|mas:*)
+            _tools_manager_name=desktop
+            _tools_package=$_tools_id
+            desktop_supported "$_tools_id" || return
+            return 0 ;;
+        flatpak:*)
+            _tools_flatpak_native=$_tools_manager_name
+            _tools_manager_name=flatpak
+            _tools_package=${_tools_package#flatpak:}
+            case $_tools_package in *[!A-Za-z0-9._-]*|'') return 2 ;; esac
+            return 0 ;;
+    esac
     if [ "$_tools_manager_name" = apt ] && [ "$_tools_package" != - ] && command -v apt-cache >/dev/null 2>&1 && ! apt-cache show "$_tools_package" >/dev/null 2>&1; then
         if _tools_upstream_record; then _tools_manager_name=upstream; _tools_package=$_tools_id; return 0; fi
     fi
@@ -82,6 +146,8 @@ _tools_privileged() {
 }
 _tools_package_exists() {
     case $_tools_manager_name in
+        desktop) desktop_exists "$_tools_id" ;;
+        flatpak) _tools_flatpak_scope >/dev/null ;;
         upstream) [ -f "${DOTFILES_BIN:-$HOME/.local/bin}/$_tools_id" ] ;;
         brew) case $_tools_package in cask:*) brew list --cask "${_tools_package#cask:}" >/dev/null 2>&1 ;; *) brew list --formula "$_tools_package" >/dev/null 2>&1 ;; esac ;;
         apt) [ "$(dpkg-query -W -f='${Status}' "$_tools_package" 2>/dev/null)" = 'install ok installed' ] ;;
@@ -91,8 +157,13 @@ _tools_package_exists() {
 _tools_native() {
     _tools_operation=$1
     case $_tools_manager_name in
+        desktop) desktop_change "$_tools_id" "$_tools_operation" ;;
+        flatpak) _tools_flatpak "$_tools_operation" ;;
         upstream) _tools_upstream "$_tools_operation" ;;
         brew)
+            if [ "$_tools_operation" = install ] && [ "${_tools_existing:-0}" = 1 ]; then
+                case $_tools_package in cask:*) _tools_operation=reinstall ;; esac
+            fi
             case $_tools_package in cask:*) brew "$_tools_operation" --cask "${_tools_package#cask:}" ;; *) brew "$_tools_operation" --formula "$_tools_package" ;; esac ;;
         apt)
             case $_tools_operation in
@@ -117,10 +188,20 @@ _tools_change() (
     if [ "$_tools_action" != install ]; then
         _tools_owned=$(awk -F '\t' -v id="$_tools_id" '$1==id && $4=="created-by-dotfiles" {print; exit}' "$DOTFILES_STATE/packages" 2>/dev/null)
         if [ -z "$_tools_owned" ]; then
-            printf 'Refusing %s: %s was not installed by dotfiles.\n' "$_tools_action" "$_tools_id" >&2; return 1
+            if [ "$_tools_action" = upgrade ] && [ "$_tools_manager_name" != upstream ] && _tools_package_exists; then
+                if [ "$_tools_manager_name" = flatpak ] && [ "$_tools_flatpak_scope_value" != --user ]; then
+                    printf '%s\n' 'Existing system Flatpak app must be updated by its original administrator.' >&2
+                    return 1
+                fi
+                # Explicit updates do not adopt ownership or enable later removal.
+                :
+            else
+                printf 'Refusing %s: %s is not owned by dotfiles or installed through this backend; use its original installer.\n' "$_tools_action" "$_tools_id" >&2; return 1
+            fi
+        else
+            _tools_manager_name=$(_tools_field "$_tools_owned" 2)
+            _tools_package=$(_tools_field "$_tools_owned" 3)
         fi
-        _tools_manager_name=$(_tools_field "$_tools_owned" 2)
-        _tools_package=$(_tools_field "$_tools_owned" 3)
     fi
     if [ "${DOTFILES_DRY_RUN:-0}" = 1 ]; then printf '%s %s (%s)\n' "$_tools_action" "$_tools_id" "$_tools_manager_name"; return 0; fi
     mkdir -p "$DOTFILES_STATE" || return
@@ -138,7 +219,10 @@ _tools_change() (
             _tools_package_exists && _tools_existing=1
             _tools_native install || return
             if [ "$_tools_existing" = 0 ]; then
-                printf '%s\t%s\t%s\tcreated-by-dotfiles\n' "$_tools_id" "$_tools_manager_name" "$_tools_package" >> "$_tools_ownership" || return
+                _tools_ledger_new=$(mktemp "$DOTFILES_STATE/packages.XXXXXX") || return
+                awk -F '\t' -v id="$_tools_id" '$1!=id' "$_tools_ownership" > "$_tools_ledger_new" || return
+                printf '%s\t%s\t%s\tcreated-by-dotfiles\n' "$_tools_id" "$_tools_manager_name" "$_tools_package" >> "$_tools_ledger_new" || return
+                mv "$_tools_ledger_new" "$_tools_ownership" || return
             fi
             _tools_alias "$_tools_id"
             if ! _tools_available "$_tools_record"; then
@@ -152,6 +236,7 @@ _tools_change() (
             fi
             _tools_removal_safe || return
             _tools_native uninstall || return
+            if [ "$_tools_manager_name" = flatpak ]; then _tools_remove_app_shim "$_tools_id" || return; fi
             _tools_ledger_new=$(mktemp "$DOTFILES_STATE/packages.XXXXXX") || return
             awk -F '\t' -v id="$_tools_id" '$1 != id' "$_tools_ownership" > "$_tools_ledger_new" && mv "$_tools_ledger_new" "$_tools_ownership"
             case $_tools_id in fd|bat|psql|mysql)
@@ -160,7 +245,7 @@ _tools_change() (
                     _tools_link=$(readlink "$_tools_bin/$_tools_id")
                     case $_tools_link in */fdfind|*/batcat|*/libpq/bin/psql|*/mysql-client/bin/mysql) rm "$_tools_bin/$_tools_id" ;; esac
                 fi ;;
-                code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm)
+                code|firefox|chrome|jetbrains-toolbox|pgadmin|orbstack|utm|claude-desktop|chatgpt|codexbar|cyberduck|github-desktop|hoppscotch|mutekey|sequel-ace|stats)
                     _tools_remove_app_shim "$_tools_id" ;;
             esac ;;
     esac
@@ -252,6 +337,8 @@ _tools_apt_guard() {
 }
 _tools_removal_safe() {
     case $_tools_manager_name in
+        desktop) return 0 ;;
+        flatpak) return 0 ;;
         upstream) return 0 ;;
         brew)
             case $_tools_package in cask:*) return 0 ;; esac
@@ -328,7 +415,10 @@ _tools_remove_app_shim() (
     [ -n "$_tools_alias_row" ] || return 0
     _tools_command=$(_tools_field "$_tools_alias_row" 2)
     _tools_digest=$(_tools_field "$_tools_alias_row" 3)
-    case $_tools_command in code|firefox|google-chrome|jetbrains-toolbox|pgadmin4|orb|utmctl) ;; *) return 1 ;; esac
+    _tools_expected_record=$(_tools_row "$1") || return
+    _tools_expected_command=$(_tools_field "$_tools_expected_record" 2)
+    [ "$_tools_command" = "$_tools_expected_command" ] || return 1
+    case $_tools_command in *[!a-zA-Z0-9_-]*|'') return 1 ;; esac
     _tools_path=${DOTFILES_BIN:-$HOME/.local/bin}/$_tools_command
     [ ! -L "$_tools_path" ] && [ -f "$_tools_path" ] || return 0
     if [ "$(_tools_hash "$_tools_path")" = "$_tools_digest" ]; then
@@ -337,3 +427,88 @@ _tools_remove_app_shim() (
         awk -F '\t' -v id="$1" '$1!=id' "$DOTFILES_STATE/aliases.tsv" > "$_tools_new" && mv "$_tools_new" "$DOTFILES_STATE/aliases.tsv"
     fi
 )
+
+# Linux desktop applications use user-scoped, GPG-verified Flathub deployments.
+_tools_flatpak_scope() {
+    command -v flatpak >/dev/null 2>&1 || return 1
+    if flatpak info --user "$_tools_package" >/dev/null 2>&1; then
+        _tools_flatpak_scope_value=--user
+    elif flatpak info --system "$_tools_package" >/dev/null 2>&1; then
+        _tools_flatpak_scope_value=--system
+    else return 1; fi
+}
+_tools_flatpak() {
+    case $1 in
+        install)
+            # Existing system or user applications retain their installation owner.
+            if _tools_flatpak_scope; then return 0; fi
+            if ! command -v flatpak >/dev/null 2>&1; then
+                case $_tools_flatpak_native in
+                    apt) _tools_privileged env DEBIAN_FRONTEND=noninteractive apt-get update &&
+                        _tools_apt_guard install -y --no-install-recommends flatpak || return ;;
+                    dnf) _tools_privileged dnf -y install flatpak || return ;;
+                    *) return 1 ;;
+                esac
+            fi
+            if [ "$_tools_id" = orbstack ] && ! command -v podman >/dev/null 2>&1; then
+                case $_tools_flatpak_native in
+                    apt) _tools_privileged env DEBIAN_FRONTEND=noninteractive apt-get update &&
+                        _tools_apt_guard install -y --no-install-recommends podman || return ;;
+                    dnf) _tools_privileged dnf -y install podman || return ;;
+                    *) return 1 ;;
+                esac
+            fi
+            flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || return
+            _tools_flatpak_remote_trusted || return
+            flatpak install --user --app --noninteractive -y flathub "$_tools_package" ;;
+        upgrade)
+            _tools_flatpak_origin=$(flatpak info --user --show-origin "$_tools_package") || return
+            [ "$_tools_flatpak_origin" = flathub ] || { printf '%s\n' 'Only Flathub app updates are supported; use the original remote.' >&2; return 1; }
+            _tools_flatpak_remote_trusted || return
+            flatpak update --user --app --noninteractive -y "$_tools_package" ;;
+        uninstall) flatpak uninstall --user --app --noninteractive -y "$_tools_package" ;;
+        *) return 2 ;;
+    esac
+}
+_tools_flatpak_alias() (
+    _tools_record=$(_tools_row "$1") || return
+    if command -v apt-get >/dev/null 2>&1; then _tools_flatpak_column=4
+    elif command -v dnf >/dev/null 2>&1; then _tools_flatpak_column=5
+    else return 0; fi
+    _tools_package=$(_tools_field "$_tools_record" "$_tools_flatpak_column")
+    case $_tools_package in flatpak:*) _tools_package=${_tools_package#flatpak:} ;; *) return 0 ;; esac
+    case $_tools_package in *[!A-Za-z0-9._-]*|'') return 2 ;; esac
+    _tools_flatpak_scope || return 0
+    _tools_alias_command=$(_tools_field "$_tools_record" 2)
+    case $_tools_alias_command in *[!a-zA-Z0-9_-]*|'') return 2 ;; esac
+    _tools_bin=${DOTFILES_BIN:-$HOME/.local/bin}
+    if command -v "$_tools_alias_command" >/dev/null 2>&1; then
+        _tools_existing_alias=$_tools_bin/$_tools_alias_command
+        if [ -f "$DOTFILES_STATE/aliases.tsv" ] && [ -f "$_tools_existing_alias" ] && [ ! -L "$_tools_existing_alias" ]; then
+            _tools_existing_digest=$(awk -F '\t' -v id="$1" -v cmd="$_tools_alias_command" '$1==id && $2==cmd {digest=$3} END {print digest}' "$DOTFILES_STATE/aliases.tsv")
+            if [ -n "$_tools_existing_digest" ] && [ "$(_tools_hash "$_tools_existing_alias")" = "$_tools_existing_digest" ]; then
+                _tools_expected_line="exec flatpak run $_tools_flatpak_scope_value '$_tools_package' "'"$@"'
+                if grep -Fxq "$_tools_expected_line" "$_tools_existing_alias"; then return 0; fi
+                _tools_remove_app_shim "$1" || return
+            else return 0; fi
+        else return 0; fi
+    fi
+    [ ! -e "$_tools_bin/$_tools_alias_command" ] && [ ! -L "$_tools_bin/$_tools_alias_command" ] || return 0
+    mkdir -p "$_tools_bin" "$DOTFILES_STATE" || return
+    _tools_stage=$(mktemp "$_tools_bin/.$_tools_alias_command.XXXXXX") || return
+    trap 'rm -f "$_tools_stage"' EXIT
+    printf '%s\n' '#!/bin/sh' "exec flatpak run $_tools_flatpak_scope_value '$_tools_package' "'"$@"' > "$_tools_stage" || return
+    chmod 755 "$_tools_stage" || return
+    _tools_digest=$(_tools_hash "$_tools_stage") || return
+    [ ! -e "$_tools_bin/$_tools_alias_command" ] && [ ! -L "$_tools_bin/$_tools_alias_command" ] || return 1
+    mv "$_tools_stage" "$_tools_bin/$_tools_alias_command" || return
+    printf '%s\t%s\t%s\n' "$1" "$_tools_alias_command" "$_tools_digest" >> "$DOTFILES_STATE/aliases.tsv"
+)
+
+_tools_flatpak_remote_trusted() {
+    _tools_remotes=$(flatpak remotes --user --columns=name,url,options) || return
+    if ! printf '%s\n' "$_tools_remotes" | awk -F '\t' '$1=="flathub" && $2=="https://dl.flathub.org/repo/" && $3 !~ /no-gpg-verify/ {safe=1} END {exit !safe}'; then
+        printf '%s\n' 'Refusing untrusted or unsigned Flathub remote.' >&2
+        return 1
+    fi
+}

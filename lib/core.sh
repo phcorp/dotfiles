@@ -397,6 +397,7 @@ dotfiles wizard
 dotfiles install|repair|update|uninstall [--non-interactive] [--dry-run]
          [--profiles shell,runtimes,php,cloud,databases,desktop] [--sync] [--force]
 dotfiles tools list|ensure|install|update|remove [tool]
+dotfiles apps list|install|update|remove [app|all] [--non-interactive] [--dry-run]
 dotfiles sync [--non-interactive] | sync enable|disable
 dotfiles publish "commit message" | doctor | recover
 dotfiles mode interactive|non-interactive
@@ -407,7 +408,7 @@ main() {
     # The explicit wizard is interactive even when first-use installs are unattended.
     [ "$_action" != wizard ] || DOTFILES_MODE=interactive
     _sub=; _arg=
-    case $_action in tools|sync|mode) if [ $# -gt 0 ]; then case $1 in --*) ;; *) _sub=$1; shift ;; esac; fi ;;
+    case $_action in tools|apps|sync|mode) if [ $# -gt 0 ]; then case $1 in --*) ;; *) _sub=$1; shift ;; esac; fi ;;
         publish) _arg=${1:-}; [ $# = 0 ] || shift ;; esac
     while [ $# -gt 0 ]; do
         case $1 in
@@ -417,7 +418,7 @@ main() {
             --sync) DOTFILES_SYNC_ENABLE=1 ;;
             --profiles) shift; [ $# -gt 0 ] || { fail '--profiles needs a value'; return 1; }; DOTFILES_PROFILES=$1 ;;
             --help|-h) usage; return ;;
-            *) if [ "$_action" = tools ] && [ -z "$_arg" ]; then _arg=$1; else fail "Unknown argument: $1"; return 1; fi ;;
+            *) if { [ "$_action" = tools ] || [ "$_action" = apps ]; } && [ -z "$_arg" ]; then _arg=$1; else fail "Unknown argument: $1"; return 1; fi ;;
         esac
         shift
     done
@@ -431,6 +432,7 @@ main() {
     fi
     case $_action in
         tools) setup_state; case $_sub in list) tools_list ;; ensure) tools_ensure "$_arg" ;; install) tools_install "$_arg" ;; update) tools_update "$_arg" ;; remove) tools_remove "$_arg" ;; *) usage; return 1 ;; esac ;;
+        apps) setup_state; apps_action "$_sub" "${_arg:-all}" ;;
         doctor) doctor ;;
         mode) case $_sub in interactive|non-interactive) setup_state; printf '%s\n' "$_sub" > "$DOTFILES_CONFIG/mode" ;; *) fail 'Choose interactive or non-interactive'; return 1 ;; esac ;;
         install|repair|update|uninstall|recover|sync|publish)
@@ -460,7 +462,7 @@ wizard() {
     if [ "$DOTFILES_MODE" != interactive ] || [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
         fail 'Wizard requires a terminal; use scriptable subcommands.'; return 1
     fi
-    printf 'Dotfiles: 1 install, 2 update, 3 repair, 4 uninstall, 5 enable sync, 6 disable sync\nChoice [1]: ' > /dev/tty
+    printf 'Dotfiles: 1 install, 2 update, 3 repair, 4 uninstall, 5 enable sync, 6 disable sync, 7 install apps, 8 update apps, 9 remove owned apps\nChoice [1]: ' > /dev/tty
     IFS= read -r _choice < /dev/tty
     case ${_choice:-1} in
         1)
@@ -485,6 +487,34 @@ wizard() {
         3) main repair ;;
         4) printf 'Restore managed files and retain private backups/tools? [y/N]: ' > /dev/tty; IFS= read -r _confirm < /dev/tty
             case $_confirm in y|Y) main uninstall ;; *) say 'Cancelled.' ;; esac ;;
-        5) main sync enable ;; 6) main sync disable ;; *) fail 'Invalid wizard choice'; return 1 ;;
+        5) main sync enable ;; 6) main sync disable ;;
+        7) main apps install ;;
+        8) main apps update ;;
+        9) printf 'Remove desktop apps installed by dotfiles? Existing apps and app data are retained. [y/N]: ' > /dev/tty
+            IFS= read -r _confirm < /dev/tty
+            case $_confirm in y|Y) main apps remove ;; *) say 'Cancelled.' ;; esac ;;
+        *) fail 'Invalid wizard choice'; return 1 ;;
     esac
 }
+
+# Batch desktop operations use saved selections; removal uses the ownership ledger.
+apps_action() (
+    _apps_action=$1; _apps_target=$2
+    case $_apps_action in list) awk -F '\t' 'NR==1 || $6=="desktop"' "$DOTFILES_SOURCE/catalog.tsv"; return ;; install|update|remove) ;; *) fail 'Choose apps list, install, update, or remove'; return 1 ;; esac
+    if [ "$_apps_target" != all ]; then
+        _apps_record=$(_tools_row "$_apps_target") || return
+        [ "$(_tools_field "$_apps_record" 6)" = desktop ] || { fail 'This tool is not a desktop app.'; return 1; }
+        _apps_ids=$_apps_target
+    elif [ "$_apps_action" = remove ]; then
+        [ -f "$DOTFILES_STATE/packages" ] || return 0
+        _apps_ids=$(awk -F '\t' 'NR==FNR {if ($6=="desktop") app[$1]=1; next} $1 in app && $4=="created-by-dotfiles" {print $1}' "$DOTFILES_SOURCE/catalog.tsv" "$DOTFILES_STATE/packages")
+    else
+        [ -f "$DOTFILES_CONFIG/tools" ] || { fail 'Select the desktop profile with install or repair first.'; return 1; }
+        _apps_ids=$(awk -F '\t' 'NR==FNR {if ($6=="desktop") app[$1]=1; next} $1 in app {print $1}' "$DOTFILES_SOURCE/catalog.tsv" "$DOTFILES_CONFIG/tools")
+    fi
+    _apps_failed=0
+    for _apps_id in $_apps_ids; do
+        case $_apps_action in install) tools_install "$_apps_id" ;; update) tools_update "$_apps_id" ;; remove) tools_remove "$_apps_id" ;; esac || _apps_failed=1
+    done
+    return "$_apps_failed"
+)
