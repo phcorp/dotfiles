@@ -100,4 +100,7 @@ if __name__ == "__main__":
     if "--detect" in sys.argv:
         sys.exit(0 if root else 1)
     if root:
+        # Keep native module scanning consistent across shells and nested folders.
+        os.chdir(root)
+        os.environ["PWD"] = str(root)
         os.execvp("starship", ["starship", "module", module, "--path", str(root)])

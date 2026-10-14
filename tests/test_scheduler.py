@@ -28,7 +28,7 @@ class Scheduler(unittest.TestCase):
         uname.chmod(0o755)
         self.log = self.home / 'scheduler.log'
         self.env['DOTFILES_SCHEDULER_LOG'] = str(self.log)
-        for name in ('launchctl', 'systemctl'):
+        for name in ('launchctl', 'systemctl', 'crontab'):
             script = self.bin / name
             script.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOTFILES_SCHEDULER_LOG"\nexit 0\n')
             script.chmod(0o755)
@@ -66,6 +66,21 @@ class Scheduler(unittest.TestCase):
         for key in ('XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'DOTFILES_CONFIG', 'DOTFILES_STATE'):
             self.assertIn(f'{key}={self.env[key]}', content)
         self.assertIn('enable --now dotfiles-sync.timer', self.log.read_text())
+
+    def test_uninstall_without_owned_scheduler_does_not_touch_global_jobs(self):
+        for platform in ('Darwin', 'Linux'):
+            with self.subTest(platform=platform):
+                self.env['DOTFILES_TEST_PLATFORM'] = platform
+                self.cli('uninstall', '--non-interactive')
+                self.assertFalse(self.log.exists())
+
+    def test_uninstall_disables_its_owned_scheduler(self):
+        self.env['DOTFILES_TEST_PLATFORM'] = 'Darwin'
+        self.cli('sync', 'enable', '--non-interactive')
+        self.log.unlink()
+        self.cli('uninstall', '--non-interactive')
+        self.assertIn('bootout', self.log.read_text())
+        self.assertFalse((self.home / 'Library/LaunchAgents/com.phcorp.dotfiles.plist').exists())
 
     def test_macos_symlink_plist_is_rejected(self):
         self.env['DOTFILES_TEST_PLATFORM'] = 'Darwin'

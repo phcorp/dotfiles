@@ -98,7 +98,8 @@ class PromptContext(unittest.TestCase):
         (self.home / '.nvmrc').write_text('24\n')
         (self.home / 'lua').mkdir()
         def render(directory):
-            result = subprocess.run(['starship', 'prompt'], cwd=directory, env=self.env,
+            environment = dict(self.env, PWD=str(directory))
+            result = subprocess.run(['starship', 'prompt'], cwd=directory, env=environment,
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             return result.stdout

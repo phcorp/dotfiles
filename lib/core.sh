@@ -216,6 +216,13 @@ scheduler_target() {
 }
 xml_value() { printf '%s' "$1" | sed 's/\&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g'; }
 sync_disable() {
+    # A disposable/uninstalled HOME does not own the user's global scheduler.
+    if [ ! -f "$DOTFILES_CONFIG/sync-enabled" ]; then
+        case $(uname -s) in
+            Darwin) [ -f "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" ] || return 0 ;;
+            Linux) if [ ! -f "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.timer" ] && [ ! -f "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.service" ]; then return 0; fi ;;
+        esac
+    fi
     case $(uname -s) in
         Darwin)
             scheduler_target "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" || return
