@@ -252,6 +252,19 @@ chmod +x "$HOME/fixture-bin/symfony"
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), value)
 
+    def test_git_multiple_relative_and_tilde_includes_survive(self):
+        (self.home / 'relative one').write_text('[user]\n    name = Fixture User\n')
+        (self.home / 'relative two').write_text('[user]\n    email = fixture@example.invalid\n')
+        (self.home / '.fixture-extra').write_text('[core]\n    editor = fixture-editor\n')
+        config = self.home / '.gitconfig'
+        for path in ('relative one', 'relative two', '~/.fixture-extra'):
+            subprocess.run(['git', 'config', '--file', str(config), '--add', 'include.path', path], check=True, env=self.env)
+        self.install()
+        for key, value in [('user.name', 'Fixture User'), ('user.email', 'fixture@example.invalid'), ('core.editor', 'fixture-editor')]:
+            result = subprocess.run(['git', 'config', '--global', '--includes', '--get', key], env=self.env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), value)
+
 
 if __name__ == '__main__':
     unittest.main()

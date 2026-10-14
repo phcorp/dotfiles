@@ -130,7 +130,7 @@ migrate_git() {
         # Git resolves relative includes beside the file; preserve their original base.
         git config --file "$DOTFILES_CONFIG/local/gitconfig" --get-regexp '^include.*\.path$' > "$DOTFILES_STATE/includes.tmp" || :
         while IFS=' ' read -r _key _value; do
-            case $_value in /*|~/*|'') ;; *) git config --file "$DOTFILES_CONFIG/local/gitconfig" --replace-all "$_key" "$HOME/$_value" ;; esac
+            case $_value in /*|'~/'*|'') ;; *) git config --file "$DOTFILES_CONFIG/local/gitconfig" --fixed-value --replace-all "$_key" "$HOME/$_value" "$_value" ;; esac
         done < "$DOTFILES_STATE/includes.tmp"
         rm -f "$DOTFILES_STATE/includes.tmp"
     fi
