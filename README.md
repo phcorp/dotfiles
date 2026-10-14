@@ -124,7 +124,8 @@ Automatic synchronization never pushes. Edit public source files, run tests,
 then explicitly publish. Publishing and Git hooks enforce public path policy,
 GitHub noreply commit identity, and redacted Gitleaks checks. Install Python 3
 and Gitleaks before publishing. Git hooks are a convenience; CI and the explicit
-publish command also enforce checks.
+publish command also enforce checks. Bootstrap provides Python 3; publishing
+installs selected Gitleaks automatically if needed.
 
 No scanner can classify every possible private string. The primary privacy
 boundary is keeping all machine data and secrets outside the allowlisted public
