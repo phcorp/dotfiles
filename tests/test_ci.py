@@ -106,6 +106,12 @@ pathlib.Path(args[args.index('-o') + 1]).write_bytes(pathlib.Path(os.environ['CI
             with self.subTest(response=response):
                 self.check(response, False)
 
+    def test_multiple_json_documents_are_rejected(self):
+        valid = json.dumps({'total_count': 1, 'workflow_runs': [run_record()]})
+        for response in [valid + '\n' + valid, valid + '\nnull', '{}\n' + valid]:
+            with self.subTest(response=response):
+                self.check(response, False)
+
     def test_invalid_status_and_numeric_fields(self):
         for changes in [dict(status='banana'), dict(conclusion='green'), dict(id='100'),
                         dict(run_number=0), dict(run_attempt=1.5), dict(run_attempt=True)]:

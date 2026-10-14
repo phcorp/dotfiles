@@ -65,7 +65,7 @@ ci_verify_commit() (
             --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
             --header 'X-GitHub-Api-Version: 2022-11-28' "$_ci_url" -o "$_ci_work/runs.json" 2>/dev/null
     fi || { printf '%s\n' 'GitHub CI response unavailable; refusing unverified repository code.' >&2; return 1; }
-    jq -e --arg sha "$_ci_sha" --arg branch "$_ci_branch" --arg repository "$_ci_slug" '
+    jq -e --slurp --arg sha "$_ci_sha" --arg branch "$_ci_branch" --arg repository "$_ci_slug" '
         def positive_integer: type == "number" and . > 0 and floor == .;
         def valid_run:
             type == "object" and
@@ -81,6 +81,7 @@ ci_verify_commit() (
             (.conclusion == null or (.conclusion | IN("success", "failure", "cancelled", "timed_out", "action_required", "neutral", "skipped", "stale", "startup_failure"))) and
             ((.status == "completed") == (.conclusion != null)) and
             (.head_sha == $sha);
+        length == 1 and (.[0] |
         type == "object" and
         (.total_count | type == "number" and . >= 0 and floor == .) and
         (.workflow_runs | type == "array") and
@@ -91,7 +92,7 @@ ci_verify_commit() (
             (.path == ".github/workflows/verify.yml" or .path == (".github/workflows/verify.yml@" + $branch) or .path == (".github/workflows/verify.yml@refs/heads/" + $branch)) and
             .event == "push" and .head_branch == $branch)] |
             sort_by([.run_number, .run_attempt, .id]) | last |
-            .status == "completed" and .conclusion == "success")
+            .status == "completed" and .conclusion == "success"))
     ' "$_ci_work/runs.json" >/dev/null 2>&1 || {
         printf '%s\n' 'Latest exact-commit Verify push run is missing, invalid, incomplete, or unsuccessful.' >&2; return 1;
     }

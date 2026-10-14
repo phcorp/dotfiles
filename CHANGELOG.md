@@ -4,6 +4,7 @@
 
 - Validate the exact bootstrap revision against successful Verify CI before
   executing cloned code; reject unavailable, incomplete, and invalid responses.
+  Require exactly one JSON document, including with older jq versions.
 - Preview file differences, conflicts, selections, and package plans without
   modifying private configuration, ownership records, or scheduler state.
 - Recover interrupted apply/update transactions with prior files, backups,
