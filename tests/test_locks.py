@@ -5,6 +5,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -102,7 +103,8 @@ class Locks(unittest.TestCase):
     def test_pid_reuse_is_detected_by_start_identity(self):
         process = self.start_holder()
         fields = (self.lock / 'owner').read_text().rstrip('\n').split('\t')
-        fields[3] = 'Thu Jan 1 00:00:00 1970'
+        fields[3] = ('linux:00000000-0000-0000-0000-000000000000:0'
+                     if fields[3].startswith('linux:') else 'Thu Jan 1 00:00:00 1970')
         (self.lock / 'owner').write_text('\t'.join(fields) + '\n')
         self.assertEqual(self.status(), 'stale')
         result = self.shell('lock_recover_stale "$DOTFILES_LOCK_PATH"')
@@ -214,3 +216,19 @@ class Locks(unittest.TestCase):
         (self.lock / 'unexpected').write_text('preserve')
         self.assertNotEqual(self.shell('lock_recover_stale "$DOTFILES_LOCK_PATH"').returncode, 0)
         self.assertTrue((self.lock / 'unexpected').exists())
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux procfs identity')
+    def test_linux_lock_requires_no_ps_or_hostname_command(self):
+        mock = self.home / 'minimal-bin'
+        mock.mkdir()
+        for command in ('ps', 'hostname'):
+            stub = mock / command
+            stub.write_text('#!/bin/sh\nexit 99\n')
+            stub.chmod(0o755)
+        env = dict(self.env, PATH=str(mock) + ':' + self.env['PATH'])
+        result = self.shell('lock_acquire "$DOTFILES_LOCK_PATH" && '
+                            'lock_status "$DOTFILES_LOCK_PATH" && '
+                            'lock_release "$DOTFILES_LOCK_PATH"', env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'active')
+        self.assertFalse(self.lock.exists())

@@ -18,8 +18,35 @@ _lock_parent_safe() (
     [ "$_lp_home" != / ] || return 1
     case "$_lp_actual/" in "$_lp_home/"*) ;; *) _lock_error 'Lock parent escapes HOME.'; return 1 ;; esac
 )
-_lock_host() { LC_ALL=C hostname 2>/dev/null; }
-_lock_start() { TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1=$1; print}'; }
+_lock_host() { LC_ALL=C uname -n 2>/dev/null; }
+_lock_start() (
+    case $1 in ''|0|*[!0-9]*) return 1 ;; esac
+    # Keep legacy ps identities comparable; never reclaim merely because the
+    # installed implementation uses a different identity representation.
+    case ${2:-} in
+        linux:*) [ "$(uname -s)" = Linux ] || return 1 ;;
+        '') if [ "$(uname -s)" != Linux ]; then
+                TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1=$1; print}'
+                return
+            fi ;;
+        *) TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1=$1; print}'; return ;;
+    esac
+    # Python is an existing bootstrap prerequisite. procfs avoids depending on
+    # optional procps/hostname packages in minimal Linux installations. Include
+    # boot identity so PID/start-tick reuse after a reboot cannot look active.
+    python3 - "$1" 2>/dev/null <<'PYTHON'
+import pathlib, sys, uuid
+try:
+    boot = str(uuid.UUID(pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()))
+    fields = pathlib.Path('/proc', sys.argv[1], 'stat').read_text().rpartition(')')[2].split()
+    ticks = fields[19]
+    if not ticks.isdecimal():
+        raise ValueError('Invalid process start')
+    print('linux:' + boot + ':' + ticks)
+except (OSError, ValueError, IndexError):
+    sys.exit(1)
+PYTHON
+)
 _lock_metadata() {
     [ -d "$1" ] && [ ! -L "$1" ] && [ -f "$1/owner" ] && [ ! -L "$1/owner" ] || return 1
     awk -F '\t' 'NR!=1 || NF!=6 {bad=1} END {exit bad || NR!=1}' "$1/owner" || return
@@ -37,7 +64,7 @@ _lock_classify() {
     _lock_metadata "$1" || return 0
     _lock_current_host=$(_lock_host) || return 0
     [ "$_lock_current_host" = "$_lock_owner_host" ] || return 0
-    _lock_current_start=$(_lock_start "$_lock_owner_pid")
+    _lock_current_start=$(_lock_start "$_lock_owner_pid" "$_lock_owner_start") || _lock_current_start=
     if [ -n "$_lock_current_start" ]; then
         if [ "$_lock_current_start" = "$_lock_owner_start" ]; then _lock_result=active
         else _lock_result=stale; fi
@@ -59,7 +86,7 @@ lock_status() (
 lock_acquire() {
     _lock_parent_safe "$1" || return
     _lock_acquire_host=$(_lock_host) || return
-    _lock_acquire_start=$(_lock_start "$$")
+    _lock_acquire_start=$(_lock_start "$$") || _lock_acquire_start=
     [ -n "$_lock_acquire_start" ] || { _lock_error 'Cannot determine lock owner process identity.'; return 1; }
     case $_lock_acquire_host in ''|*[!A-Za-z0-9_.-]*) _lock_error 'Cannot determine lock owner host identity.'; return 1 ;; esac
     mkdir -m 700 "$1" 2>/dev/null || { _lock_error "Lock is $(lock_status "$1"); use explicit stale recovery when appropriate."; return 1; }

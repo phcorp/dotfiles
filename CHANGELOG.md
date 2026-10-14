@@ -8,7 +8,9 @@
   modifying private configuration, ownership records, or scheduler state.
 - Recover interrupted apply/update transactions with prior files, backups,
   selection, ownership, and source revision preserved; explicitly diagnose and
-  reclaim stale locks without removing active or unverifiable owners.
+  reclaim stale locks without removing active or unverifiable owners. Minimal
+  Linux systems use boot identity and process start ticks without optional
+  process-listing or hostname packages.
 - Make repository, synchronization branch, and public publication identity
   configurable without rewriting existing private Git identity settings.
 - Add deterministic CI and actual interruption tests, reproducible startup and
