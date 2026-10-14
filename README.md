@@ -94,6 +94,9 @@ Private override files under `$XDG_CONFIG_HOME/dotfiles/local/`:
 - `login-bash.sh`, `login-zsh.sh`, and their `pre-login-*` counterparts: login hooks.
 - `gitconfig`: private Git identity and credential settings.
 
+Set `DOTFILES_INIT_RVM=0` in private environment overrides to keep an installed
+RVM from initializing in a shell that normally uses another Ruby installation.
+
 Override files are never imported, committed, or pushed by the CLI. Do not put
 credentials in public managed files. Keep credentials in the system credential
 store or an independently configured secret manager. Diagnostics do not dump

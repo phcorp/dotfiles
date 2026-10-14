@@ -63,7 +63,9 @@ export NVM_DIR=${NVM_DIR:-"$HOME/.nvm"}
 if _dotfiles_external_exists pyenv; then
     eval "$(command pyenv init -)"
 fi
-[ ! -s "$HOME/.rvm/scripts/rvm" ] || . "$HOME/.rvm/scripts/rvm"
+if [ "${DOTFILES_INIT_RVM:-1}" = 1 ] && [ -s "$HOME/.rvm/scripts/rvm" ]; then
+    . "$HOME/.rvm/scripts/rvm"
+fi
 
 starship() { _dotfiles_tool starship starship "$@"; }
 eza() { _dotfiles_tool eza eza "$@"; }

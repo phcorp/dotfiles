@@ -32,6 +32,7 @@ environment = []
 hooks = {}
 editor = []
 uses_project_node = False
+rvm_shells = set()
 excluded = {'ZSH', 'ZSH_THEME', 'DISABLE_UPDATE_PROMPT', 'TERM', 'LANG', 'LC_COLLATE', 'NVM_DIR', 'BUN_INSTALL', 'EDITOR'}
 for filename in ('.profile', '.bash_profile', '.zprofile', '.bashrc', '.zshrc'):
     path = home / filename
@@ -41,6 +42,8 @@ for filename in ('.profile', '.bash_profile', '.zprofile', '.bashrc', '.zshrc'):
     login = filename.endswith('profile')
     extras, pre = [], []
     source = path.read_text()
+    if '.rvm/scripts/rvm' in source:
+        rvm_shells.add(shell)
     uses_project_node = uses_project_node or '.nvmrc' in source
     editor_block = re.search(r'if \[\[ -n \$SSH_CONNECTION \]\]; then\s*\n(.*?)\nelse\s*\n(.*?)\nfi', source, re.S)
     if editor_block and not editor:
@@ -69,6 +72,13 @@ for filename in ('.profile', '.bash_profile', '.zprofile', '.bashrc', '.zshrc'):
 for name, lines in hooks.items():
     write(name, list(dict.fromkeys(lines)))
 environment = list(dict.fromkeys(environment)) + editor
+environment += [
+    'if [ -n "${ZSH_VERSION-}" ]; then',
+    '    DOTFILES_INIT_RVM=' + str(int('zsh' in rvm_shells)),
+    'else',
+    '    DOTFILES_INIT_RVM=' + str(int('bash' in rvm_shells)),
+    'fi',
+]
 # Deduplicate PATH entries even when several former startup files set them.
 environment += [
     '_dotfiles_remaining=$PATH; PATH=',
