@@ -267,12 +267,13 @@ class AppBatches(unittest.TestCase):
         with (source / 'catalog.tsv').open('a') as catalog:
             catalog.write('code\tcode\tcask:visual-studio-code\tflatpak:com.visualstudio.code\tflatpak:com.visualstudio.code\tdesktop\n')
             catalog.write('ripgrep\trg\tripgrep\tripgrep\tripgrep\tshell\n')
-        self.env.update(DOTFILES_CORE=str(ROOT / 'lib/core.sh'), DOTFILES_FORCE='0',
+        self.env.update(DOTFILES_CORE=str(ROOT / 'lib/core.sh'),
+                        DOTFILES_PREVIEW=str(ROOT / 'lib/preview.sh'), DOTFILES_FORCE='0',
                         DOTFILES_DRY_RUN='0', DOTFILES_PROFILES='', DOTFILES_SYNC_ENABLE='0',
                         XDG_CONFIG_HOME=str(self.home / 'config'), XDG_STATE_HOME=str(self.home / 'state'))
 
     def run_batch(self, command, mocks=''):
-        body = '. "$DOTFILES_CORE"; . "$DOTFILES_LIBRARY"; ' + mocks + '; ' + command
+        body = '. "$DOTFILES_CORE"; . "$DOTFILES_LIBRARY"; . "$DOTFILES_PREVIEW"; ' + mocks + '; ' + command
         return subprocess.run(['/bin/sh', '-c', body], env=self.env, cwd=self.home,
                               capture_output=True, text=True, timeout=10)
 
@@ -323,8 +324,8 @@ class AppBatches(unittest.TestCase):
     def test_cli_dry_run_never_invokes_app_operation(self):
         result = self.run_batch('main apps remove firefox --non-interactive --dry-run',
                                 'tools_remove() { printf unexpected-removal; return 7; }')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('Dry run: apps remove firefox', result.stdout)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('BLOCKED remove firefox: unowned', result.stdout)
         self.assertNotIn('unexpected-removal', result.stdout)
 
 

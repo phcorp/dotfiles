@@ -97,6 +97,15 @@ preview() (
     case $_action in
         install|repair|update|uninstall|recover)
             _preview_failed=0
+            if [ "$_action" = recover ] && [ "${DOTFILES_UNLOCK_STALE:-0}" = 1 ]; then
+                _preview_lock=$(lock_status "$DOTFILES_STATE/lifecycle.lock")
+                case $_preview_lock in
+                    stale) say 'PLAN explicitly reclaim verified stale lifecycle lock.' ;;
+                    absent) say 'UNCHANGED no lifecycle lock requires reclamation.' ;;
+                    *) say 'BLOCKED lock is active or unverifiable; reclamation refused.'; return 1 ;;
+                esac
+                [ -d "$DOTFILES_STATE/transaction" ] || return 0
+            fi
             python3 "$DOTFILES_SOURCE/scripts/preview.py" "$_action" || _preview_failed=1
             case $_action in install|repair|update) preview_selection || _preview_failed=1 ;; esac
             if [ "$_action" = uninstall ]; then say 'PLAN disable owned synchronization; restore managed files and retain packages/private backups.'; fi

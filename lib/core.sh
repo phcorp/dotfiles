@@ -64,12 +64,18 @@ setup_state() {
     if [ ! -f "$DOTFILES_STATE/originals.list" ]; then : > "$DOTFILES_STATE/originals.list" || return; fi
 }
 lock_state() {
-    mkdir "$DOTFILES_STATE/lifecycle.lock" 2>/dev/null || { fail 'Another lifecycle operation is running. Remove the lock only after confirming it is stale.'; return 1; }
-    trap '_result=$?; printf "%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_action:-operation}" "$_result" > "$DOTFILES_STATE/last-operation"; rmdir "$DOTFILES_STATE/lifecycle.lock" 2>/dev/null || :' EXIT
+    _lifecycle_lock=$DOTFILES_STATE/lifecycle.lock
+    if [ "${DOTFILES_UNLOCK_STALE:-0}" = 1 ]; then
+        [ "$_action" = recover ] || { fail '--unlock-stale is only valid with recover.'; return 1; }
+        if [ "$(lock_status "$_lifecycle_lock")" != absent ]; then lock_recover_stale "$_lifecycle_lock" || return; fi
+    fi
+    lock_acquire "$_lifecycle_lock" || { fail 'Lifecycle lock prevents this operation. Run dotfiles doctor for status and safe recovery instructions.'; return 1; }
+    trap '_result=$?; printf "%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_action:-operation}" "$_result" > "$DOTFILES_STATE/last-operation"; lock_release "$_lifecycle_lock" || :' EXIT
     trap 'exit 129' HUP
     trap 'exit 130' INT
     trap 'exit 143' TERM
 }
+
 check_owned() {
     [ -f "$DOTFILES_STATE/managed.tsv" ] || return 0
     _changed=0
@@ -137,7 +143,7 @@ migrate_git() {
 }
 rotate_originals() {
     if [ ! -f "$DOTFILES_STATE/managed.tsv" ] && [ -s "$DOTFILES_STATE/originals.list" ]; then
-        [ ! -d "$DOTFILES_STATE/transaction" ] || { fail 'Recover the interrupted installation before reinstalling.'; return 1; }
+        [ ! -d "$DOTFILES_STATE/transaction" ] || [ "${_transaction_open:-0}" = 1 ] || { fail 'Recover the interrupted installation before reinstalling.'; return 1; }
         _archive=$(mktemp -d "$DOTFILES_STATE/previous-install.XXXXXX") || return
         mv "$DOTFILES_STATE/originals" "$_archive/originals" || return
         mv "$DOTFILES_STATE/originals.list" "$_archive/originals.list" || return
@@ -149,18 +155,40 @@ apply_abort() {
     recover_files || { fail 'Rollback incomplete; transaction retained for recovery.'; return 1; }
     fail 'Apply failed; prior files restored.'
 }
+begin_transaction() {
+    _transaction=$DOTFILES_STATE/transaction
+    [ ! -e "$_transaction" ] || { fail 'Interrupted transaction detected. Run dotfiles recover.'; return 1; }
+    mkdir -p "$_transaction/files" "$_transaction/metadata" || return
+    printf '2\n' > "$_transaction/format" || return
+    : > "$_transaction/paths" || return
+    printf '%s\n' "$DOTFILES_STATE/managed.tsv" "$DOTFILES_STATE/applied-revision" \
+        "$DOTFILES_CONFIG/tools" "$DOTFILES_CONFIG/profiles" "$DOTFILES_CONFIG/mode" \
+        "$DOTFILES_STATE/originals.list" > "$_transaction/metadata.paths" || return
+    _index=0
+    while IFS= read -r _metadata_path; do
+        _index=$((_index + 1))
+        safe_target "$_metadata_path" || return
+        [ ! -L "$_metadata_path" ] || { fail 'Transaction metadata cannot be a symlink.'; return 1; }
+        if [ -f "$_metadata_path" ]; then cp -p "$_metadata_path" "$_transaction/metadata/$_index" || return; fi
+    done < "$_transaction/metadata.paths"
+    cp -RPp "$DOTFILES_STATE/originals" "$_transaction/originals.before" || return
+    : > "$_transaction/metadata.ready" || return
+    _transaction_open=1
+}
+commit_transaction() {
+    : > "$_transaction/committed.new" || return
+    mv "$_transaction/committed.new" "$_transaction/committed" || return
+    rm -rf "$_transaction" || return
+    _transaction_open=0
+}
 apply_files() {
     valid_paths || return
     check_owned || { fail 'Use private local overrides or explicitly repair --force after reviewing your edits.'; return 1; }
-    managed_paths > "$DOTFILES_STATE/targets.unsorted" || return
-    sort -u "$DOTFILES_STATE/targets.unsorted" > "$DOTFILES_STATE/targets.new" || return
-    if [ -f "$DOTFILES_STATE/managed.tsv" ]; then cut -f2 "$DOTFILES_STATE/managed.tsv" >> "$DOTFILES_STATE/targets.new" || return; fi
-    sort -u "$DOTFILES_STATE/targets.new" > "$DOTFILES_STATE/targets.all" || return
-    _transaction=$DOTFILES_STATE/transaction
-    [ ! -e "$_transaction" ] || { fail 'Interrupted transaction detected. Run dotfiles recover.'; return 1; }
-    mkdir -p "$_transaction/files" || return
-    : > "$_transaction/paths" || return
-    if [ -f "$DOTFILES_STATE/managed.tsv" ]; then cp -p "$DOTFILES_STATE/managed.tsv" "$_transaction/managed.before" || return; fi
+    [ "${_transaction_open:-0}" = 1 ] || begin_transaction || return
+    managed_paths > "$DOTFILES_STATE/targets.unsorted" || { apply_abort; return 1; }
+    sort -u "$DOTFILES_STATE/targets.unsorted" > "$DOTFILES_STATE/targets.new" || { apply_abort; return 1; }
+    if [ -f "$DOTFILES_STATE/managed.tsv" ]; then cut -f2 "$DOTFILES_STATE/managed.tsv" >> "$DOTFILES_STATE/targets.new" || { apply_abort; return 1; }; fi
+    sort -u "$DOTFILES_STATE/targets.new" > "$DOTFILES_STATE/targets.all" || { apply_abort; return 1; }
     while IFS= read -r _target; do
         save_original "$_target" || { apply_abort; return 1; }
         _relative=${_target#"$HOME/"}
@@ -170,6 +198,7 @@ apply_files() {
         fi
         printf '%s\n' "$_target" >> "$_transaction/paths" || { apply_abort; return 1; }
     done < "$DOTFILES_STATE/targets.all"
+    : > "$_transaction/files.ready" || { apply_abort; return 1; }
     if ! cm apply --force || ! cm_config apply --force; then apply_abort; return 1; fi
     mkdir -p "$HOME/.local/bin" || { apply_abort; return 1; }
     ln -snf "$DOTFILES_SOURCE/bin/dotfiles" "$HOME/.local/bin/dotfiles" || { apply_abort; return 1; }
@@ -184,32 +213,82 @@ apply_files() {
         printf '%s\t%s\n' "$_new_hash" "$_target" >> "$DOTFILES_STATE/managed.new" || { apply_abort; return 1; }
     done < "$DOTFILES_STATE/targets.current"
     mv "$DOTFILES_STATE/managed.new" "$DOTFILES_STATE/managed.tsv" || { apply_abort; return 1; }
-    git -C "$DOTFILES_SOURCE" rev-parse HEAD > "$DOTFILES_STATE/applied-revision" 2>/dev/null || :
-    rm -rf "$_transaction" || return
-    rm -f "$DOTFILES_STATE/targets.new" "$DOTFILES_STATE/targets.all" "$DOTFILES_STATE/targets.current" "$DOTFILES_STATE/targets.unsorted" || return
+    if git -C "$DOTFILES_SOURCE" rev-parse HEAD > "$DOTFILES_STATE/applied-revision.new" 2>/dev/null; then
+        mv "$DOTFILES_STATE/applied-revision.new" "$DOTFILES_STATE/applied-revision" || { apply_abort; return 1; }
+    else rm -f "$DOTFILES_STATE/applied-revision.new"; fi
+    rm -f "$DOTFILES_STATE/targets.new" "$DOTFILES_STATE/targets.all" "$DOTFILES_STATE/targets.current" "$DOTFILES_STATE/targets.unsorted" || { apply_abort; return 1; }
 }
 recover_files() {
     valid_paths || return
-    [ -f "$DOTFILES_STATE/transaction/paths" ] || { fail 'No recovery transaction exists.'; return 1; }
-    # Validate the whole transaction before restoring any target.
+    _recovery=$DOTFILES_STATE/transaction
+    [ -f "$_recovery/paths" ] || { fail 'No recovery transaction exists.'; return 1; }
+    if [ -f "$_recovery/committed" ]; then
+        rm -rf "$_recovery" || return
+        _transaction_open=0
+        say 'Completed transaction cleanup; committed files and revision retained.'; return 0
+    fi
+    # Check source and every path before restoring any files. Never discard new
+    # manual commits or uncommitted source changes during interrupted sync recovery.
+    if [ -f "$_recovery/source.before" ]; then
+        _source_before=$(cat "$_recovery/source.before")
+        _source_next=
+        if [ -f "$_recovery/source.next" ]; then _source_next=$(cat "$_recovery/source.next"); fi
+        case $_source_before in ''|*[!a-f0-9]*) fail 'Invalid source recovery revision; preserve the journal for review.'; return 1 ;; esac
+        [ "${#_source_before}" = 40 ] || { fail 'Invalid source recovery revision; preserve the journal for review.'; return 1; }
+        if [ -f "$_recovery/source.ready" ]; then
+            case $_source_next in ''|*[!a-f0-9]*) fail 'Invalid candidate recovery revision; preserve the journal for review.'; return 1 ;; esac
+            [ "${#_source_next}" = 40 ] || { fail 'Invalid candidate recovery revision; preserve the journal for review.'; return 1; }
+        fi
+        _source_current=$(git -C "$DOTFILES_SOURCE" rev-parse HEAD) || return
+        if [ ! -f "$_recovery/source.ready" ] && [ "$_source_current" != "$_source_before" ]; then fail 'Source changed before journal preparation completed; preserve it for review.'; return 1; fi
+        case $_source_current in "$_source_before"|"$_source_next") ;; *) fail 'Source changed since interruption; review the journal before recovery.'; return 1 ;; esac
+        _source_status=$(git -c core.fsmonitor=false -C "$DOTFILES_SOURCE" status --porcelain) || { fail 'Cannot inspect source status; preserve it before recovery.'; return 1; }
+        [ -z "$_source_status" ] || { fail 'Source has local changes; preserve them before recovery.'; return 1; }
+        git -C "$DOTFILES_SOURCE" cat-file -e "$_source_before^{commit}" || return
+    fi
     while IFS= read -r _target; do
         safe_target "$_target" || return
-        safe_ancestor "$DOTFILES_STATE/transaction/files/${_target#"$HOME/"}" || return
-    done < "$DOTFILES_STATE/transaction/paths"
+        [ ! -d "$_target" ] || [ -L "$_target" ] || { fail 'Recovery target is a directory; preserve it before recovery.'; return 1; }
+        safe_ancestor "$_recovery/files/${_target#"$HOME/"}" || return
+    done < "$_recovery/paths"
+    if [ -f "$_recovery/metadata.ready" ]; then
+        while IFS= read -r _metadata_path; do
+            case $_metadata_path in "$DOTFILES_STATE/managed.tsv"|"$DOTFILES_STATE/applied-revision"|"$DOTFILES_CONFIG/tools"|"$DOTFILES_CONFIG/profiles"|"$DOTFILES_CONFIG/mode"|"$DOTFILES_STATE/originals.list") ;; *) fail 'Invalid recovery metadata path.'; return 1 ;; esac
+            safe_target "$_metadata_path" || return
+            [ ! -L "$_metadata_path" ] && [ ! -d "$_metadata_path" ] || { fail 'Recovery metadata path changed; manual review required.'; return 1; }
+        done < "$_recovery/metadata.paths"
+    fi
     while IFS= read -r _target; do
         _relative=${_target#"$HOME/"}
         rm -f "$_target" || return
-        if [ -e "$DOTFILES_STATE/transaction/files/$_relative" ] || [ -L "$DOTFILES_STATE/transaction/files/$_relative" ]; then
+        if [ -e "$_recovery/files/$_relative" ] || [ -L "$_recovery/files/$_relative" ]; then
             mkdir -p "$(dirname "$_target")" || return
-            cp -Pp "$DOTFILES_STATE/transaction/files/$_relative" "$_target" || return
+            cp -Pp "$_recovery/files/$_relative" "$_target" || return
         fi
-    done < "$DOTFILES_STATE/transaction/paths"
-    if [ -f "$DOTFILES_STATE/transaction/managed.before" ]; then
-        cp -p "$DOTFILES_STATE/transaction/managed.before" "$DOTFILES_STATE/managed.tsv" || return
-    else rm -f "$DOTFILES_STATE/managed.tsv" || return; fi
-    rm -rf "$DOTFILES_STATE/transaction" || return
-    say 'Recovered prior file contents.'
+    done < "$_recovery/paths"
+    if [ -f "$_recovery/metadata.ready" ]; then
+        _index=0
+        while IFS= read -r _metadata_path; do
+            _index=$((_index + 1))
+            if [ -f "$_recovery/metadata/$_index" ]; then cp -p "$_recovery/metadata/$_index" "$_metadata_path" || return
+            else rm -f "$_metadata_path" || return; fi
+        done < "$_recovery/metadata.paths"
+        if [ -d "$_recovery/originals.before" ]; then
+            rm -rf "$DOTFILES_STATE/originals" || return
+            cp -RPp "$_recovery/originals.before" "$DOTFILES_STATE/originals" || return
+        fi
+    elif [ -f "$_recovery/managed.before" ]; then
+        cp -p "$_recovery/managed.before" "$DOTFILES_STATE/managed.tsv" || return
+    fi
+    if [ -f "$_recovery/source.before" ]; then
+        git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DOTFILES_SOURCE" reset --hard --quiet "$_source_before" || return
+    fi
+    rm -rf "$_recovery" || return
+    rm -f "$DOTFILES_STATE/applied-revision.new" "$DOTFILES_STATE/managed.new" "$DOTFILES_STATE/targets.new" "$DOTFILES_STATE/targets.all" "$DOTFILES_STATE/targets.current" "$DOTFILES_STATE/targets.unsorted" || return
+    _transaction_open=0
+    say 'Recovered prior files, ownership, and revision metadata.'
 }
+
 scheduler_target() {
     safe_target "$1" || return
     [ ! -L "$1" ] || { fail 'Scheduler files cannot be symlinks.'; return 1; }
@@ -312,18 +391,24 @@ ci_passed() {
 
 sync_repository() {
     check_owned || return 1
-    [ -z "$(git -C "$DOTFILES_SOURCE" status --porcelain)" ] || { fail 'Source checkout has uncommitted changes; sync stopped.'; return 1; }
+    _source_status=$(git -c core.fsmonitor=false -C "$DOTFILES_SOURCE" status --porcelain) || { fail 'Cannot inspect source status; sync stopped.'; return 1; }
+    [ -z "$_source_status" ] || { fail 'Source checkout has uncommitted changes; sync stopped.'; return 1; }
     _old=$(git -C "$DOTFILES_SOURCE" rev-parse HEAD)
-    GIT_TERMINAL_PROMPT=0 git -C "$DOTFILES_SOURCE" fetch --quiet origin master || { fail 'Fetch failed; current configuration retained.'; return 1; }
+    GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DOTFILES_SOURCE" fetch --quiet origin master || { fail 'Fetch failed; current configuration retained.'; return 1; }
     _next=$(git -C "$DOTFILES_SOURCE" rev-parse origin/master)
     git -C "$DOTFILES_SOURCE" merge-base --is-ancestor "$_old" "$_next" || { fail 'History diverged; manual review required.'; return 1; }
     ci_passed "$_next" || { fail 'Successful Verify CI unavailable; current configuration retained.'; return 1; }
     [ "$_old" != "$_next" ] || { say 'Already synchronized.'; return 0; }
-    git -C "$DOTFILES_SOURCE" merge --ff-only --quiet "$_next"
+    [ "${_transaction_open:-0}" = 1 ] || begin_transaction || return
+    printf '%s\n' "$_old" > "$_transaction/source.before.new" && mv "$_transaction/source.before.new" "$_transaction/source.before" || return
+    printf '%s\n' "$_next" > "$_transaction/source.next.new" && mv "$_transaction/source.next.new" "$_transaction/source.next" || return
+    : > "$_transaction/source.ready.new" && mv "$_transaction/source.ready.new" "$_transaction/source.ready" || return
+    if ! git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$DOTFILES_SOURCE" merge --ff-only --quiet "$_next"; then apply_abort; return 1; fi
     if ! apply_files; then
-        git -C "$DOTFILES_SOURCE" reset --hard --quiet "$_old"
+        [ ! -d "$DOTFILES_STATE/transaction" ] || recover_files || return
         fail 'Deployment failed; source revision restored.'; return 1
     fi
+    commit_transaction || return
     say "Synchronized revision $_next."
 }
 publish_repository() {
@@ -337,6 +422,12 @@ publish_repository() {
 }
 doctor() {
     _status=0
+    _doctor_lock=$(lock_status "$DOTFILES_STATE/lifecycle.lock")
+    case $_doctor_lock in
+        active) say 'Lifecycle lock active: matching PID, host, and process start. Do not remove it.'; _status=1 ;;
+        stale) say 'Lifecycle lock stale: its owner exited or its PID was reused. Run dotfiles recover --unlock-stale to reclaim it explicitly.'; _status=1 ;;
+        unknown) say 'Lifecycle lock owner cannot be verified (legacy, foreign host, or inaccessible process). Review its private owner metadata and original host before manual recovery; it will not be removed automatically.'; _status=1 ;;
+    esac
     for _required in git chezmoi curl jq; do
         command -v "$_required" >/dev/null 2>&1 || { say "Missing prerequisite: $_required"; _status=1; }
     done
@@ -394,7 +485,7 @@ dotfiles install|repair|update|uninstall [--non-interactive] [--dry-run]
 dotfiles tools list|ensure|install|update|remove [tool]
 dotfiles apps list|install|update|remove [app|all] [--non-interactive] [--dry-run]
 dotfiles sync [--non-interactive] | sync enable|disable
-dotfiles publish "commit message" | doctor | recover
+dotfiles publish "commit message" | doctor | recover [--unlock-stale]
 dotfiles mode interactive|non-interactive
 EOF
 }
@@ -410,6 +501,7 @@ main() {
             --non-interactive) DOTFILES_MODE=non-interactive ;;
             --dry-run) DOTFILES_DRY_RUN=1 ;;
             --force) DOTFILES_FORCE=1 ;;
+            --unlock-stale) DOTFILES_UNLOCK_STALE=1 ;;
             --sync) DOTFILES_SYNC_ENABLE=1 ;;
             --profiles) shift; [ $# -gt 0 ] || { fail '--profiles needs a value'; return 1; }; DOTFILES_PROFILES=$1 ;;
             --help|-h) usage; return ;;
@@ -432,8 +524,12 @@ main() {
             setup_state; lock_state
             case $_action in
                 install) [ -n "$DOTFILES_PROFILES" ] || [ -f "$DOTFILES_CONFIG/tools" ] || DOTFILES_PROFILES=shell
-                    printf '%s\n' "$DOTFILES_MODE" > "$DOTFILES_CONFIG/mode"
-                    rotate_originals; save_selection; migrate_git; apply_files
+                    begin_transaction || return
+                    if ! { printf '%s\n' "$DOTFILES_MODE" > "$DOTFILES_CONFIG/mode" && rotate_originals && save_selection && migrate_git && apply_files; }; then
+                        [ ! -d "$DOTFILES_STATE/transaction" ] || recover_files || return
+                        return 1
+                    fi
+                    commit_transaction || return
                     if [ "${DOTFILES_TESTING:-0}" != 1 ] && [ -w "$DOTFILES_SOURCE/.git/config" ]; then
                         git -C "$DOTFILES_SOURCE" config user.name phcorp
                         git -C "$DOTFILES_SOURCE" config user.email 725023+phcorp@users.noreply.github.com
@@ -441,10 +537,14 @@ main() {
                     fi
                     [ "$DOTFILES_SYNC_ENABLE" = 0 ] || sync_enable
                     say 'Installed. Selected tools install on first use; use tools install to provision eagerly.' ;;
-                repair) save_selection; apply_files; say 'Configuration repaired.' ;;
-                update) save_selection; sync_repository ;;
+                repair) begin_transaction || return; if ! { save_selection && apply_files; }; then [ ! -d "$DOTFILES_STATE/transaction" ] || recover_files || return; return 1; fi; commit_transaction || return; say 'Configuration repaired.' ;;
+                update) begin_transaction || return
+                    if ! { save_selection && sync_repository; }; then [ ! -d "$DOTFILES_STATE/transaction" ] || recover_files || return; return 1; fi
+                    [ "${_transaction_open:-0}" = 0 ] || commit_transaction ;;
                 uninstall) uninstall_files ;;
-                recover) recover_files ;;
+                recover) if [ -d "$DOTFILES_STATE/transaction" ]; then recover_files
+                    elif [ "${DOTFILES_UNLOCK_STALE:-0}" = 1 ]; then say 'No abandoned lock or file transaction requires further recovery.'
+                    else fail 'No recovery transaction exists.'; return 1; fi ;;
                 sync) case $_sub in enable) sync_enable ;; disable) sync_disable ;; '') sync_repository ;; *) fail 'Unknown sync action'; return 1 ;; esac ;;
                 publish) publish_repository "$_arg" ;;
             esac ;;

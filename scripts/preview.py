@@ -215,6 +215,9 @@ def main():
             print('BLOCKED interrupted transaction: run dotfiles recover before application.')
             blocked = True
     elif operation in ('uninstall', 'recover'):
+        if operation == 'recover' and (STATE / 'transaction/committed').is_file():
+            print('PLAN complete transaction cleanup; committed configuration and revision retained.')
+            return 0
         paths = ownership
         root = STATE / 'originals'
         if operation == 'recover':

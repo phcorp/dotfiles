@@ -12,8 +12,8 @@ for record in subprocess.check_output(['git', 'ls-files', '--stage', '-z'], text
         metadata, name = record.split('\t', 1)
         mode, digest, stage = metadata.split()
         index[name] = (mode, stage)
-roots = {'.github', 'bin', 'lib', 'home', 'scripts', 'tests'}
-names = {'README.md', 'CHANGELOG.md', 'catalog.tsv', 'bootstrap.sh', '.chezmoiroot', '.gitignore', '.gitleaks.toml'}
+roots = {'.github', 'bin', 'lib', 'home', 'scripts', 'tests', 'docs'}
+names = {'README.md', 'CHANGELOG.md', 'LICENSE', 'catalog.tsv', 'bootstrap.sh', '.chezmoiroot', '.gitignore', '.gitleaks.toml'}
 errors = []
 def public_identity(name, email):
     match = re.fullmatch(r'(?:[0-9]+\+)?([A-Za-z0-9_.-]+(?:\[bot\])?)@users\.noreply\.github\.com', email)
