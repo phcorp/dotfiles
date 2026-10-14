@@ -18,14 +18,14 @@ _lock_parent_safe() (
     [ "$_lp_home" != / ] || return 1
     case "$_lp_actual/" in "$_lp_home/"*) ;; *) _lock_error 'Lock parent escapes HOME.'; return 1 ;; esac
 )
-_lock_host() { LC_ALL=C uname -n 2>/dev/null; }
+_lock_host() { python3 -c 'import socket; print(socket.gethostname())' 2>/dev/null; }
 _lock_start() (
     case $1 in ''|0|*[!0-9]*) return 1 ;; esac
     # Keep legacy ps identities comparable; never reclaim merely because the
     # installed implementation uses a different identity representation.
     case ${2:-} in
-        linux:*) [ "$(uname -s)" = Linux ] || return 1 ;;
-        '') if [ "$(uname -s)" != Linux ]; then
+        linux:*) [ -r /proc/sys/kernel/random/boot_id ] || return 1 ;;
+        '') if [ ! -r /proc/sys/kernel/random/boot_id ]; then
                 TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | awk '{$1=$1; print}'
                 return
             fi ;;
