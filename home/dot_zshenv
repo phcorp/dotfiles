@@ -1,3 +1,4 @@
 # Debian/Ubuntu initialize completion globally unless this flag is set. Own the
 # initialization in .zshrc so insecure system completion paths cannot prompt.
 case $- in *i*) skip_global_compinit=1 ;; esac
+[ ! -r "$HOME/.cargo/env" ] || . "$HOME/.cargo/env"
