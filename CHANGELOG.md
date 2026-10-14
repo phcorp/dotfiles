@@ -1,5 +1,11 @@
 # Changelog
 
+## Project-aware prompt
+
+- Show Node, Lua, and AWS context only in relevant projects and subdirectories.
+- Ignore global HOME settings and unrelated parent repositories; keep AWS
+  account/profile identities hidden.
+
 ## Portable overhaul
 
 - Replace the legacy shell files with chezmoi-managed Bash/Zsh configuration.

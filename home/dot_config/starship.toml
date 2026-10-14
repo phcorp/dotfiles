@@ -8,3 +8,36 @@ truncation_length = 3
 [gcloud]
 # Cloud account identities remain private and do not belong in the shared prompt.
 disabled = true
+
+# Global runtime settings and credentials are not project markers.
+[nodejs]
+disabled = true
+detect_extensions = []
+detect_files = ["package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", ".node-version", ".nvmrc"]
+
+[lua]
+disabled = true
+detect_files = [".lua-version", ".luarc.json", ".luarc.jsonc"]
+
+[aws]
+disabled = true
+# Display context without publishing account/profile identities in the prompt.
+format = 'on [$symbol(\($region\))]($style) '
+
+[custom.nodejs]
+when = 'test "$PWD" != "$HOME"'
+command = '"${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/prompt-context.py" nodejs'
+shell = ["sh"]
+format = '$output'
+
+[custom.lua]
+when = 'test "$PWD" != "$HOME"'
+command = '"${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/prompt-context.py" lua'
+shell = ["sh"]
+format = '$output'
+
+[custom.aws]
+when = 'test "$PWD" != "$HOME"'
+command = '"${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/prompt-context.py" aws'
+shell = ["sh"]
+format = '$output'

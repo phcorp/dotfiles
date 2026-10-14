@@ -66,6 +66,16 @@ invokes Symfony's `bin/console` or legacy `app/console` with quoted arguments.
 `tsplit` passes arguments directly to `tmux split-window`; the former eval-based
 multi-pane helper is retired. `ssh-use-key` adds a key to an existing agent.
 
+Node, Lua, and AWS prompt indicators appear only in matching projects, including
+their subdirectories. Global settings in HOME never count as project markers;
+scanning stops at HOME or a Git repository boundary. Node requires a package,
+lockfile, local version file, or `node_modules`, rather than arbitrary JavaScript.
+AWS detection recognizes SAM/CDK/Amplify, AWS SDK dependencies, AWS Terraform
+providers/resources, and AWS Serverless/CloudFormation templates. Add an empty
+`.aws-project` file for an AWS project without those standard markers. Only its
+region is displayed; account identities stay hidden. Detection reads bounded
+configuration files and never executes project scripts or contacts cloud APIs.
+
 ## Existing machines and private settings
 
 Installation preserves original managed files under

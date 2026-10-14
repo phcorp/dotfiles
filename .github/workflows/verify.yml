@@ -19,11 +19,12 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == macOS ]]; then
-            brew install chezmoi shellcheck gitleaks
+            brew install chezmoi shellcheck gitleaks starship
           else
             sudo apt-get update
             sudo apt-get install -y zsh shellcheck
             ./bootstrap.sh --dependencies-only --non-interactive
+            PATH="$HOME/.local/bin:$PATH" bin/dotfiles tools install starship --non-interactive
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
       - name: Public file policy
