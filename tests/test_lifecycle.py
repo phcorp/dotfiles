@@ -228,6 +228,21 @@ chmod +x "$HOME/fixture-bin/symfony"
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.home / '.bashrc').read_text(), original)
 
+    def test_reinstall_captures_new_original_and_keeps_old_backup(self):
+        target = self.home / '.bashrc'
+        target.write_text('# first original\n')
+        self.install()
+        self.run_cli('uninstall', '--non-interactive')
+        self.assertEqual(target.read_text(), '# first original\n')
+        target.write_text('# second original\n')
+        self.install()
+        self.run_cli('uninstall', '--non-interactive')
+        self.assertEqual(target.read_text(), '# second original\n')
+        state = self.home / '.local/state/dotfiles'
+        backed_up = [path.read_text() for path in state.rglob('.bashrc') if path.is_file()]
+        self.assertIn('# first original\n', backed_up)
+        self.assertIn('# second original\n', backed_up)
+
     def test_git_identity_survives(self):
         (self.home / '.gitconfig').write_text('[user]\n    name = Fixture User\n    email = fixture@example.invalid\n')
         self.install()

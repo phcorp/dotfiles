@@ -210,12 +210,20 @@ recover_files() {
     rm -rf "$DOTFILES_STATE/transaction" || return
     say 'Recovered prior file contents.'
 }
+scheduler_target() {
+    safe_target "$1" || return
+    [ ! -L "$1" ] || { fail 'Scheduler files cannot be symlinks.'; return 1; }
+}
+xml_value() { printf '%s' "$1" | sed 's/\&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g'; }
 sync_disable() {
     case $(uname -s) in
         Darwin)
+            scheduler_target "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" || return
             launchctl bootout "gui/$(id -u)/com.phcorp.dotfiles" >/dev/null 2>&1 || :
             rm -f "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" ;;
         Linux)
+            scheduler_target "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.timer" || return
+            scheduler_target "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.service" || return
             if command -v systemctl >/dev/null 2>&1; then systemctl --user disable --now dotfiles-sync.timer >/dev/null 2>&1 || :; fi
             rm -f "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.timer" "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.service"
             if command -v crontab >/dev/null 2>&1; then
@@ -229,18 +237,23 @@ sync_enable() {
     _cli=$HOME/.local/bin/dotfiles
     case $(uname -s) in
         Darwin)
-            mkdir -p "$HOME/Library/LaunchAgents"
+            scheduler_target "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" || return
+            mkdir -p "$HOME/Library/LaunchAgents" || return
             # XML-escape machine paths without writing private data into the repository.
-            _xml_cli=$(printf '%s' "$_cli" | sed 's/\&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
-            _xml_home=$(printf '%s' "$HOME" | sed 's/\&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
-            _xml_source=$(printf '%s' "$DOTFILES_SOURCE" | sed 's/\&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+            _xml_cli=$(xml_value "$_cli")
+            _xml_home=$(xml_value "$HOME")
+            _xml_source=$(xml_value "$DOTFILES_SOURCE")
+            _xml_config=$(xml_value "$DOTFILES_CONFIG")
+            _xml_state=$(xml_value "$DOTFILES_STATE")
+            _xml_xdg_config=$(xml_value "$XDG_CONFIG_HOME")
+            _xml_xdg_state=$(xml_value "$XDG_STATE_HOME")
             cat > "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>com.phcorp.dotfiles</string>
 <key>ProgramArguments</key><array><string>$_xml_cli</string><string>sync</string><string>--non-interactive</string></array>
-<key>EnvironmentVariables</key><dict><key>HOME</key><string>$_xml_home</string><key>DOTFILES_SOURCE</key><string>$_xml_source</string><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+<key>EnvironmentVariables</key><dict><key>HOME</key><string>$_xml_home</string><key>DOTFILES_SOURCE</key><string>$_xml_source</string><key>DOTFILES_CONFIG</key><string>$_xml_config</string><key>DOTFILES_STATE</key><string>$_xml_state</string><key>XDG_CONFIG_HOME</key><string>$_xml_xdg_config</string><key>XDG_STATE_HOME</key><string>$_xml_xdg_state</string><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
 <key>StartInterval</key><integer>3600</integer>
 <key>RunAtLoad</key><true/>
 </dict></plist>
@@ -248,7 +261,11 @@ EOF
             launchctl bootout "gui/$(id -u)/com.phcorp.dotfiles" >/dev/null 2>&1 || :
             launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.phcorp.dotfiles.plist" ;;
         Linux)
+            scheduler_target "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.timer" || return
+            scheduler_target "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.service" || return
             if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+                # systemd expands specifiers and environment syntax even inside quotes.
+                case "$HOME$DOTFILES_SOURCE$DOTFILES_CONFIG$DOTFILES_STATE$XDG_CONFIG_HOME$XDG_STATE_HOME" in *'"'*|*'%'*|*'$'*|*\\*) fail 'Systemd scheduler paths cannot contain quotes, percent signs, dollar signs, or backslashes.'; return 1 ;; esac
                 mkdir -p "$XDG_CONFIG_HOME/systemd/user"
                 cat > "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.service" <<EOF
 [Unit]
@@ -257,6 +274,7 @@ Description=Pull validated public dotfiles
 Type=oneshot
 ExecStart="$_cli" sync --non-interactive
 Environment="PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="DOTFILES_SOURCE=$DOTFILES_SOURCE" "DOTFILES_CONFIG=$DOTFILES_CONFIG" "DOTFILES_STATE=$DOTFILES_STATE" "XDG_CONFIG_HOME=$XDG_CONFIG_HOME" "XDG_STATE_HOME=$XDG_STATE_HOME"
 EOF
                 cat > "$XDG_CONFIG_HOME/systemd/user/dotfiles-sync.timer" <<'EOF'
 [Unit]
@@ -271,9 +289,9 @@ EOF
                 systemctl --user daemon-reload
                 systemctl --user enable --now dotfiles-sync.timer
             elif command -v crontab >/dev/null 2>&1; then
-                case $_cli in *"'"*|*'%'*) fail 'Cron paths containing quotes or percent signs are unsupported.'; return 1 ;; esac
+                case "$HOME$DOTFILES_SOURCE$DOTFILES_CONFIG$DOTFILES_STATE$XDG_CONFIG_HOME$XDG_STATE_HOME" in *"'"*|*'%'*) fail 'Cron paths containing quotes or percent signs are unsupported.'; return 1 ;; esac
                 (crontab -l 2>/dev/null || :) | sed '/# phcorp-dotfiles-sync$/d' > "$DOTFILES_STATE/cron.tmp"
-                printf "17 * * * * PATH='%s/.local/bin:/usr/local/bin:/usr/bin:/bin' '%s' sync --non-interactive >/dev/null 2>&1 # phcorp-dotfiles-sync\n" "$HOME" "$_cli" >> "$DOTFILES_STATE/cron.tmp"
+                printf "17 * * * * PATH='%s/.local/bin:/usr/local/bin:/usr/bin:/bin' DOTFILES_SOURCE='%s' DOTFILES_CONFIG='%s' DOTFILES_STATE='%s' XDG_CONFIG_HOME='%s' XDG_STATE_HOME='%s' '%s' sync --non-interactive >/dev/null 2>&1 # phcorp-dotfiles-sync\n" "$HOME" "$DOTFILES_SOURCE" "$DOTFILES_CONFIG" "$DOTFILES_STATE" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$_cli" >> "$DOTFILES_STATE/cron.tmp"
                 crontab "$DOTFILES_STATE/cron.tmp"; rm "$DOTFILES_STATE/cron.tmp"
             else fail 'No user systemd or cron scheduler available; install one before enabling sync.'; return 1; fi ;;
         *) fail 'Unsupported scheduler platform.'; return 1 ;;
@@ -379,6 +397,8 @@ EOF
 }
 main() {
     _action=${1:-wizard}; [ $# = 0 ] || shift
+    # The explicit wizard is interactive even when first-use installs are unattended.
+    [ "$_action" != wizard ] || DOTFILES_MODE=interactive
     _sub=; _arg=
     case $_action in tools|sync|mode) if [ $# -gt 0 ]; then case $1 in --*) ;; *) _sub=$1; shift ;; esac; fi ;;
         publish) _arg=${1:-}; [ $# = 0 ] || shift ;; esac
@@ -430,7 +450,9 @@ main() {
     esac
 }
 wizard() {
-    [ "$DOTFILES_MODE" = interactive ] && [ -r /dev/tty ] && [ -w /dev/tty ] || { fail 'Wizard requires a terminal; use scriptable subcommands.'; return 1; }
+    if [ "$DOTFILES_MODE" != interactive ] || [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+        fail 'Wizard requires a terminal; use scriptable subcommands.'; return 1
+    fi
     printf 'Dotfiles: 1 install, 2 update, 3 repair, 4 uninstall, 5 enable sync, 6 disable sync\nChoice [1]: ' > /dev/tty
     IFS= read -r _choice < /dev/tty
     case ${_choice:-1} in
