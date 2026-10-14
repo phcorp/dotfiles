@@ -100,6 +100,7 @@ pathlib.Path(args[args.index('-o') + 1]).write_text('not-json' if case == 'malfo
                 result = self.bootstrap()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.marker.exists())
+                self.assertIn('rerun bootstrap', result.stderr)
                 # Failed validation must not leave an unusable checkout behind.
                 self.assertFalse(self.source.exists())
 

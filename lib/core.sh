@@ -255,7 +255,7 @@ recover_files() {
         while IFS= read -r _metadata_path; do
             case $_metadata_path in "$DOTFILES_STATE/managed.tsv"|"$DOTFILES_STATE/applied-revision"|"$DOTFILES_CONFIG/tools"|"$DOTFILES_CONFIG/profiles"|"$DOTFILES_CONFIG/mode"|"$DOTFILES_STATE/originals.list") ;; *) fail 'Invalid recovery metadata path.'; return 1 ;; esac
             safe_target "$_metadata_path" || return
-            [ ! -L "$_metadata_path" ] && [ ! -d "$_metadata_path" ] || { fail 'Recovery metadata path changed; manual review required.'; return 1; }
+            if [ -L "$_metadata_path" ] || [ -d "$_metadata_path" ]; then fail 'Recovery metadata path changed; manual review required.'; return 1; fi
         done < "$_recovery/metadata.paths"
     fi
     while IFS= read -r _target; do

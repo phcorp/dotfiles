@@ -23,9 +23,9 @@ _settings_validate() {
         *+*) _settings_numeric=${_settings_alias%%+*}; _settings_alias=${_settings_alias#*+}
             case $_settings_numeric in ''|*[!0-9]*) _settings_error 'Invalid publication noreply identity.'; return 1 ;; esac ;;
     esac
-    printf '%s\n' "$_settings_alias" | LC_ALL=C grep -Eq '^[A-Za-z0-9_.-]+(\[bot\])?$' && [ "$3" = "$_settings_alias" ] || {
+    if ! printf '%s\n' "$_settings_alias" | LC_ALL=C grep -Eq '^[A-Za-z0-9_.-]+(\[bot\])?$' || [ "$3" != "$_settings_alias" ]; then
         _settings_error 'Publication name must match its GitHub noreply alias.'; return 1;
-    }
+    fi
 }
 _settings_file_safe() (
     _settings_file=$1
@@ -101,7 +101,7 @@ settings_check_origin() (
     _settings_expected=$(_settings_repository_slug "${DOTFILES_REPOSITORY-https://github.com/phcorp/dotfiles.git}") || return
     _settings_fetch=$(git -C "$_settings_source" remote get-url --all origin 2>/dev/null) || { _settings_error 'Source checkout has no usable origin.'; return 1; }
     _settings_push=$(git -C "$_settings_source" remote get-url --push --all origin 2>/dev/null) || { _settings_error 'Source checkout has no usable push origin.'; return 1; }
-    [ -n "$_settings_fetch" ] && [ -n "$_settings_push" ] || { _settings_error 'Origin URLs must not be empty.'; return 1; }
+    if [ -z "$_settings_fetch" ] || [ -z "$_settings_push" ]; then _settings_error 'Origin URLs must not be empty.'; return 1; fi
     _settings_check_urls "$_settings_fetch" && _settings_check_urls "$_settings_push"
 )
 settings_publish_git_env() {

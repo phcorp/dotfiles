@@ -209,7 +209,10 @@ checkout_clean() {
     [ -z "$_bootstrap_status" ] || { printf '%s\n' 'Bootstrap refuses a dirty checkout; preserve or resolve its local changes first.' >&2; return 1; }
 }
 if [ "$new_checkout" = 0 ]; then checkout_clean; fi
-ci_verify_commit "$validated_sha" "$repository" "$branch"
+if ! ci_verify_commit "$validated_sha" "$repository" "$branch"; then
+    printf '%s\n' 'Bootstrap stopped before applying dotfiles. Ensure Verify succeeds for this exact revision on the configured repository and branch; check GitHub API access or rate limits, then rerun bootstrap.' >&2
+    exit 1
+fi
 if [ "$new_checkout" = 1 ]; then
     git -c core.hooksPath=/dev/null -C "$checkout_dir" checkout --force "$branch"
 fi
@@ -217,7 +220,7 @@ fi
 [ "$(git -C "$checkout_dir" rev-parse --verify 'HEAD^{commit}')" = "$validated_sha" ] || { printf '%s\n' 'Checkout revision changed during CI validation.' >&2; exit 1; }
 checkout_clean
 if [ "$new_checkout" = 1 ]; then
-    [ ! -e "$source_dir" ] && [ ! -L "$source_dir" ] || { printf '%s\n' 'Bootstrap source appeared during validation; refusing replacement.' >&2; exit 1; }
+    if [ -e "$source_dir" ] || [ -L "$source_dir" ]; then printf '%s\n' 'Bootstrap source appeared during validation; refusing replacement.' >&2; exit 1; fi
     safe_directory "$source_dir"
     mkdir -p "$(dirname "$source_dir")"
     mv "$checkout_dir" "$source_dir"

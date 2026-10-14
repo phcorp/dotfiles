@@ -78,10 +78,10 @@ lock_release() (
     _lock_parent_safe "$1" || return
     [ -e "$1" ] || return 0
     _lock_metadata "$1" || { _lock_error 'Lock ownership cannot be verified for release.'; return 1; }
-    [ "${_lock_path:-}" = "$1" ] && [ -n "${LOCK_NONCE:-${_lock_nonce:-}}" ] &&
-        [ "$_lock_owner_nonce" = "${LOCK_NONCE:-${_lock_nonce:-}}" ] && [ "$_lock_owner_pid" = "$$" ] || {
+    if [ "${_lock_path:-}" != "$1" ] || [ -z "${LOCK_NONCE:-${_lock_nonce:-}}" ] ||
+        [ "$_lock_owner_nonce" != "${LOCK_NONCE:-${_lock_nonce:-}}" ] || [ "$_lock_owner_pid" != "$$" ]; then
         _lock_error 'Lock ownership changed; release refused.'; return 1;
-    }
+    fi
     [ "$_lock_owner_host" = "$(_lock_host)" ] && [ "$_lock_owner_start" = "$(_lock_start "$$")" ] || return 1
     [ ! -e "$1/reclaim" ] || { _lock_error 'Lock reclaim in progress; release refused.'; return 1; }
     # Refuse unexpected contents rather than deleting files in an unrecognized lock.
@@ -105,8 +105,8 @@ lock_recover_stale() (
     _lock_reclaim_original=$1
     trap '_lock_cleanup_claim' EXIT
     _lock_classify "$1"
-    [ "$_lock_result" = stale ] && [ "$_lock_owner_nonce" = "$_lock_expected_nonce" ] &&
-        [ "$(cat "$1/owner")" = "$_lock_expected_owner" ] || { _lock_error 'Lock ownership changed during recovery.'; return 1; }
+    if [ "$_lock_result" != stale ] || [ "$_lock_owner_nonce" != "$_lock_expected_nonce" ] ||
+        [ "$(cat "$1/owner")" != "$_lock_expected_owner" ]; then _lock_error 'Lock ownership changed during recovery.'; return 1; fi
     _lock_entries=$(find "$1" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d ' ')
     [ "$_lock_entries" = 2 ] || { _lock_error 'Unexpected lock contents; stale recovery refused.'; return 1; }
     _lock_quarantine=$(mktemp -d "$(dirname "$1")/.lock-recovered.XXXXXX") || return
