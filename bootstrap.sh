@@ -16,6 +16,84 @@ for arg in "$@"; do
         *) printf 'Unknown bootstrap option: %s\n' "$arg" >&2; exit 2 ;;
     esac
 done
+# BEGIN EMBEDDED CI VALIDATOR
+# Standalone CI gate; keep the embedded bootstrap copy identical.
+# ci_verify_commit SHA [REPOSITORY] [BRANCH]: silent success, failure returns nonzero.
+# REPOSITORY/BRANCH default to DOTFILES_REPOSITORY/DOTFILES_BRANCH, then public master.
+ci_repository_slug() {
+    case $1 in
+        https://github.com/*) _ci_slug=${1#https://github.com/} ;;
+        git@github.com:*) _ci_slug=${1#git@github.com:} ;;
+        *) printf '%s\n' 'CI validation requires a GitHub repository URL without credentials.' >&2; return 1 ;;
+    esac
+    _ci_slug=${_ci_slug%.git}
+    printf '%s\n' "$_ci_slug" | LC_ALL=C grep -Eq '^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$' || {
+        printf '%s\n' 'Invalid GitHub repository URL.' >&2; return 1;
+    }
+    printf '%s\n' "$_ci_slug"
+}
+ci_verify_commit() (
+    umask 077
+    _ci_sha=$1
+    _ci_repository=${2:-${DOTFILES_REPOSITORY:-https://github.com/phcorp/dotfiles.git}}
+    _ci_branch=${3:-${DOTFILES_BRANCH:-master}}
+    case $_ci_sha in *[!a-f0-9]*|'') printf '%s\n' 'Invalid CI commit identifier.' >&2; return 1 ;; esac
+    [ "${#_ci_sha}" -eq 40 ] || { printf '%s\n' 'Invalid CI commit identifier.' >&2; return 1; }
+    _ci_slug=$(ci_repository_slug "$_ci_repository") || return
+    git check-ref-format --branch "$_ci_branch" >/dev/null 2>&1 || { printf '%s\n' 'Invalid CI branch.' >&2; return 1; }
+    if ! command -v jq >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        printf '%s\n' 'curl and jq are required for CI validation.' >&2; return 1
+    fi
+    _ci_branch_query=$(jq -nr --arg branch "$_ci_branch" '$branch | @uri') || return
+    _ci_work=$(mktemp -d) || return
+    trap 'rm -rf "$_ci_work"' EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    _ci_url="https://api.github.com/repos/$_ci_slug/actions/runs?head_sha=$_ci_sha&branch=$_ci_branch_query&event=push&per_page=100"
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' --header "Authorization: Bearer $GITHUB_TOKEN" \
+            "$_ci_url" -o "$_ci_work/runs.json" 2>/dev/null
+    else
+        curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' "$_ci_url" -o "$_ci_work/runs.json" 2>/dev/null
+    fi || { printf '%s\n' 'GitHub CI response unavailable; refusing unverified repository code.' >&2; return 1; }
+    jq -e --arg sha "$_ci_sha" --arg branch "$_ci_branch" --arg repository "$_ci_slug" '
+        def positive_integer: type == "number" and . > 0 and floor == .;
+        def valid_run:
+            type == "object" and
+            (.id | positive_integer) and (.run_number | positive_integer) and
+            (.run_attempt | positive_integer) and
+            ([.name, .path, .event, .head_branch, .head_sha, .status] | all(type == "string")) and
+            has("conclusion") and (.head_sha | test("^[a-f0-9]{40}$")) and
+            (.repository.full_name | type == "string") and
+            (.head_repository.full_name | type == "string") and
+            ((.repository.full_name | ascii_downcase) == ($repository | ascii_downcase)) and
+            ((.head_repository.full_name | ascii_downcase) == ($repository | ascii_downcase)) and
+            (.status | IN("completed", "queued", "in_progress", "requested", "waiting", "pending")) and
+            (.conclusion == null or (.conclusion | IN("success", "failure", "cancelled", "timed_out", "action_required", "neutral", "skipped", "stale", "startup_failure"))) and
+            ((.status == "completed") == (.conclusion != null)) and
+            (.head_sha == $sha);
+        type == "object" and
+        (.total_count | type == "number" and . >= 0 and floor == .) and
+        (.workflow_runs | type == "array") and
+        (.total_count == (.workflow_runs | length)) and
+        (.workflow_runs | all(valid_run)) and
+        ((.workflow_runs | map(.id) | unique | length) == (.workflow_runs | length)) and
+        ([.workflow_runs[] | select(.name == "Verify" and
+            (.path == ".github/workflows/verify.yml" or .path == (".github/workflows/verify.yml@" + $branch) or .path == (".github/workflows/verify.yml@refs/heads/" + $branch)) and
+            .event == "push" and .head_branch == $branch)] |
+            sort_by([.run_number, .run_attempt, .id]) | last |
+            .status == "completed" and .conclusion == "success")
+    ' "$_ci_work/runs.json" >/dev/null 2>&1 || {
+        printf '%s\n' 'Latest exact-commit Verify push run is missing, invalid, incomplete, or unsuccessful.' >&2; return 1;
+    }
+)
+# END EMBEDDED CI VALIDATOR
+
 privileged() {
     if [ "$(id -u)" = 0 ]; then "$@"
     elif [ "$mode" = non-interactive ]; then sudo -n "$@"
@@ -94,9 +172,54 @@ if ! command -v chezmoi >/dev/null 2>&1; then
 fi
 [ "$dependencies_only" = 0 ] || exit 0
 source_dir=${DOTFILES_SOURCE:-$XDG_DATA_HOME/chezmoi}
-if [ ! -d "$source_dir/.git" ]; then
-    [ ! -e "$source_dir" ] || { printf '%s\n' 'Source path already exists and is not a checkout.' >&2; exit 1; }
-    git clone --branch master https://github.com/phcorp/dotfiles.git "$source_dir"
+repository=${DOTFILES_REPOSITORY:-https://github.com/phcorp/dotfiles.git}
+branch=${DOTFILES_BRANCH:-master}
+expected_repository=$(ci_repository_slug "$repository")
+git check-ref-format --branch "$branch" >/dev/null 2>&1 || { printf '%s\n' 'Invalid bootstrap branch.' >&2; exit 1; }
+safe_directory "$source_dir"
+# Clone without checking out: no repository code, checkout filter or hook runs before CI.
+new_checkout=0
+checkout_dir=$source_dir
+if [ ! -e "$source_dir" ]; then
+    checkout_dir=$task_tmp/checkout
+    git -c core.hooksPath=/dev/null clone --no-checkout --branch "$branch" "$repository" "$checkout_dir"
+    new_checkout=1
+elif ! git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s\n' 'Source path already exists and is not a checkout.' >&2; exit 1
+fi
+export GIT_NO_REPLACE_OBJECTS=1
+checkout_root=$(git -C "$checkout_dir" rev-parse --show-toplevel)
+source_physical=$(CDPATH='' cd "$checkout_dir" && pwd -P)
+root_physical=$(CDPATH='' cd "$checkout_root" && pwd -P)
+[ "$source_physical" = "$root_physical" ] || { printf '%s\n' 'Bootstrap source must be the checkout root.' >&2; exit 1; }
+origin=$(git -C "$checkout_dir" config --get remote.origin.url) || { printf '%s\n' 'Bootstrap checkout has no origin.' >&2; exit 1; }
+actual_repository=$(ci_repository_slug "$origin")
+[ "$(printf '%s' "$actual_repository" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$expected_repository" | tr '[:upper:]' '[:lower:]')" ] || {
+    printf '%s\n' 'Bootstrap checkout origin differs from the configured repository.' >&2; exit 1;
+}
+validated_sha=$(git -C "$checkout_dir" rev-parse --verify 'HEAD^{commit}')
+checkout_clean() {
+    # status must not invoke repository-configured fsmonitor commands or submodule code.
+    [ -z "$(git -c core.fsmonitor=false -c core.untrackedCache=false -C "$checkout_dir" ls-files --stage | awk '$1 == "160000" {print}')" ] || { printf '%s\n' 'Bootstrap does not execute checkouts containing submodules.' >&2; return 1; }
+    _bootstrap_status=$(git -c core.fsmonitor=false -c core.untrackedCache=false -C "$checkout_dir" status --porcelain=v1 --untracked-files=all --ignore-submodules=all) || return
+    [ -z "$_bootstrap_status" ] || { printf '%s\n' 'Bootstrap refuses a dirty checkout; preserve or resolve its local changes first.' >&2; return 1; }
+}
+if [ "$new_checkout" = 0 ]; then checkout_clean; fi
+ci_verify_commit "$validated_sha" "$repository" "$branch"
+if [ "$new_checkout" = 1 ]; then
+    git -c core.hooksPath=/dev/null -C "$checkout_dir" checkout --force "$branch"
+fi
+# The revision and cleanliness checked by CI must still hold at the execution boundary.
+[ "$(git -C "$checkout_dir" rev-parse --verify 'HEAD^{commit}')" = "$validated_sha" ] || { printf '%s\n' 'Checkout revision changed during CI validation.' >&2; exit 1; }
+checkout_clean
+if [ "$new_checkout" = 1 ]; then
+    [ ! -e "$source_dir" ] && [ ! -L "$source_dir" ] || { printf '%s\n' 'Bootstrap source appeared during validation; refusing replacement.' >&2; exit 1; }
+    safe_directory "$source_dir"
+    mkdir -p "$(dirname "$source_dir")"
+    mv "$checkout_dir" "$source_dir"
+    checkout_dir=$source_dir
+    [ "$(git -C "$checkout_dir" rev-parse --verify 'HEAD^{commit}')" = "$validated_sha" ] || { printf '%s\n' 'Checkout revision changed before execution.' >&2; exit 1; }
+    checkout_clean
 fi
 if [ "$mode" = interactive ]; then
     DOTFILES_SOURCE=$source_dir "$source_dir/bin/dotfiles" wizard
