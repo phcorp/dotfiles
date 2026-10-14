@@ -1,0 +1,4 @@
+# Portable login environment.
+_dotfiles_config=${XDG_CONFIG_HOME:-"$HOME/.config"}/dotfiles
+[ ! -r "$_dotfiles_config/env.sh" ] || . "$_dotfiles_config/env.sh"
+unset _dotfiles_config

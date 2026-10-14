@@ -1,0 +1,7 @@
+[[ -o interactive ]] || return
+_dotfiles_config=${XDG_CONFIG_HOME:-"$HOME/.config"}/dotfiles
+[ ! -r "$_dotfiles_config/local/pre-zsh.sh" ] || . "$_dotfiles_config/local/pre-zsh.sh"
+[ ! -r "$_dotfiles_config/env.sh" ] || . "$_dotfiles_config/env.sh"
+[ ! -r "$_dotfiles_config/interactive.sh" ] || . "$_dotfiles_config/interactive.sh"
+[ ! -r "$_dotfiles_config/zsh.sh" ] || . "$_dotfiles_config/zsh.sh"
+unset _dotfiles_config

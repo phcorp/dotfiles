@@ -1,0 +1,6 @@
+[init]
+    defaultBranch = main
+[core]
+    excludesFile = {{ printf "%s/git/ignore" (env "XDG_CONFIG_HOME") | quote }}
+[include]
+    path = {{ printf "%s/dotfiles/local/gitconfig" (env "XDG_CONFIG_HOME") | quote }}

@@ -1,0 +1,7 @@
+_dotfiles_pre_login=${XDG_CONFIG_HOME:-"$HOME/.config"}/dotfiles/local/pre-login-zsh.sh
+[ ! -r "$_dotfiles_pre_login" ] || . "$_dotfiles_pre_login"
+unset _dotfiles_pre_login
+[ ! -r "$HOME/.profile" ] || . "$HOME/.profile"
+_dotfiles_local=${XDG_CONFIG_HOME:-"$HOME/.config"}/dotfiles/local/login-zsh.sh
+[ ! -r "$_dotfiles_local" ] || . "$_dotfiles_local"
+unset _dotfiles_local

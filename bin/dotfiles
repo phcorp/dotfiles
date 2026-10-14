@@ -1,0 +1,31 @@
+#!/bin/sh
+# shellcheck disable=SC1091
+set -eu
+umask 077
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_STATE_HOME:=$HOME/.local/state}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+export XDG_CONFIG_HOME XDG_STATE_HOME XDG_DATA_HOME
+DOTFILES_CONFIG=${DOTFILES_CONFIG:-$XDG_CONFIG_HOME/dotfiles}
+DOTFILES_STATE=${DOTFILES_STATE:-$XDG_STATE_HOME/dotfiles}
+if [ -z "${DOTFILES_SOURCE:-}" ]; then
+    _script=$0
+    while [ -L "$_script" ]; do
+        _link=$(readlink "$_script")
+        case $_link in /*) _script=$_link ;; *) _script=$(dirname "$_script")/$_link ;; esac
+    done
+    DOTFILES_SOURCE=$(CDPATH='' cd -- "$(dirname "$_script")/.." && pwd -P)
+fi
+if [ -z "${DOTFILES_MODE:-}" ] && [ -r "$DOTFILES_CONFIG/mode" ]; then
+    IFS= read -r DOTFILES_MODE < "$DOTFILES_CONFIG/mode"
+fi
+DOTFILES_MODE=${DOTFILES_MODE:-interactive}
+case $DOTFILES_MODE in interactive|non-interactive) ;; *) printf '%s\n' 'Invalid installation mode.' >&2; exit 2 ;; esac
+DOTFILES_DRY_RUN=0
+DOTFILES_FORCE=0
+DOTFILES_SYNC_ENABLE=0
+DOTFILES_PROFILES=
+export DOTFILES_CONFIG DOTFILES_STATE DOTFILES_SOURCE DOTFILES_MODE DOTFILES_DRY_RUN
+. "$DOTFILES_SOURCE/lib/core.sh"
+. "$DOTFILES_SOURCE/lib/tools.sh"
+main "$@"

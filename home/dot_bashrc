@@ -1,0 +1,7 @@
+case $- in *i*) ;; *) return ;; esac
+_dotfiles_config=${XDG_CONFIG_HOME:-"$HOME/.config"}/dotfiles
+[ ! -r "$_dotfiles_config/local/pre-bash.sh" ] || . "$_dotfiles_config/local/pre-bash.sh"
+[ ! -r "$_dotfiles_config/env.sh" ] || . "$_dotfiles_config/env.sh"
+[ ! -r "$_dotfiles_config/interactive.sh" ] || . "$_dotfiles_config/interactive.sh"
+[ ! -r "$_dotfiles_config/bash.sh" ] || . "$_dotfiles_config/bash.sh"
+unset _dotfiles_config
