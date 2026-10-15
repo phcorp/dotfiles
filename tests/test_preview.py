@@ -54,6 +54,9 @@ class Preview(unittest.TestCase):
                         GIT_COMMITTER_EMAIL='fixture@users.noreply.github.com')
         self.real_git = shutil.which('git')
         self.git('init', '-q', '-b', 'master')
+        # Background maintenance can mutate .git during read-only snapshots.
+        self.git('config', 'maintenance.auto', 'false')
+        self.git('config', 'gc.auto', '0')
         self.git('add', '.')
         self.git('commit', '-qm', 'fixture')
         self.mock_bin = self.base / 'mock-bin'
