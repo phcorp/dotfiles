@@ -116,6 +116,7 @@ preview() (
         sync) case $_sub in '') python3 "$DOTFILES_SOURCE/scripts/preview.py" sync ;; enable|disable) printf 'PLAN %s owned hourly synchronization; scheduler untouched.\n' "$_sub" ;; *) fail 'Unknown sync operation in preview.'; return 1 ;; esac ;;
         mode) case $_sub in interactive|non-interactive) printf 'PLAN set first-use mode to %s.\n' "$_sub" ;; *) fail 'Invalid mode in preview.'; return 1 ;; esac ;;
         publish) say 'NEEDS INFO publication requires explicit execution, validated identity, secret scans, and reviewed changes. No commit or push planned automatically.' ;;
+        git) case $_sub in setup) git_setup ;; status) python3 "$DOTFILES_SOURCE/scripts/git-setup.py" status ;; *) fail 'Choose git setup or git status.'; return 1 ;; esac ;;
         doctor) doctor ;;
         *) fail 'Unknown action in preview.'; return 1 ;;
     esac

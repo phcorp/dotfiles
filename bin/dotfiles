@@ -32,6 +32,7 @@ export DOTFILES_CONFIG DOTFILES_STATE DOTFILES_SOURCE DOTFILES_MODE DOTFILES_DRY
 settings_load
 . "$DOTFILES_SOURCE/lib/locks.sh"
 . "$DOTFILES_SOURCE/lib/core.sh"
+. "$DOTFILES_SOURCE/lib/git.sh"
 . "$DOTFILES_SOURCE/lib/tools.sh"
 . "$DOTFILES_SOURCE/lib/preview.sh"
 main "$@"

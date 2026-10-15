@@ -1,5 +1,17 @@
 # Changelog
 
+## Private Git setup
+
+- Add optional wizard and unattended Git setup with redacted status/previews,
+  owner-only native Git input, conditional private profiles, and recoverable
+  configuration changes.
+- Supply shared defaults for new `main` branches, fast-forward-only pulls,
+  pruning, simple pushes, and explicitly configured identity.
+- Preserve existing SSH/keychain/credential integrations; support explicit local
+  SSH/OpenPGP signing choices without generating keys, contacting remotes, or
+  silently falling back on signing errors.
+- Retain the private Git overlay and its active include after uninstallation.
+
 ## Reliability and reuse
 
 - Validate the exact bootstrap revision against successful Verify CI before

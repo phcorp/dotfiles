@@ -94,8 +94,8 @@ def safe_rendering():
         if path.is_file() and not path.is_symlink():
             text = path.read_text(errors='replace')
             if path == SOURCE / 'home/dot_gitconfig.tmpl':
-                for suffix in ('git/ignore', 'dotfiles/local/gitconfig'):
-                    text = text.replace('{{ printf "%s/' + suffix + '" (env "XDG_CONFIG_HOME") | quote }}', '')
+                for variable, suffix in (('XDG_CONFIG_HOME', 'git/ignore'), ('DOTFILES_CONFIG', 'local/gitconfig'), ('DOTFILES_CONFIG', 'local/git/config')):
+                    text = text.replace('{{ printf "%s/' + suffix + '" (env "' + variable + '") | quote }}', '')
             if '{{' in text or '}}' in text:
                 return False
     return True

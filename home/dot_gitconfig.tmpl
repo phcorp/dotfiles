@@ -1,6 +1,15 @@
 [init]
     defaultBranch = main
+[fetch]
+    prune = true
+[pull]
+    ff = only
+[push]
+    default = simple
+[user]
+    useConfigOnly = true
 [core]
     excludesFile = {{ printf "%s/git/ignore" (env "XDG_CONFIG_HOME") | quote }}
 [include]
-    path = {{ printf "%s/dotfiles/local/gitconfig" (env "XDG_CONFIG_HOME") | quote }}
+    path = {{ printf "%s/local/gitconfig" (env "DOTFILES_CONFIG") | quote }}
+    path = {{ printf "%s/local/git/config" (env "DOTFILES_CONFIG") | quote }}
