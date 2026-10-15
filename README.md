@@ -61,6 +61,8 @@ can be configured without changing your private Git identity. See
 
 ```sh
 dotfiles wizard
+dotfiles git setup --dry-run
+dotfiles git status
 dotfiles tools list
 dotfiles apps list
 dotfiles sync enable
@@ -76,6 +78,7 @@ identity, and redacted secret scans. Automatic synchronization never pushes.
 - [Platforms, prerequisites, and validation](docs/platforms.md)
 - [Applications, equivalents, and ownership](docs/applications.md)
 - [Private settings, prompt behavior, and reuse](docs/configuration.md)
+- [Git identity, signing, credentials, and profiles](docs/git.md)
 - [Recovery, backups, and uninstall](docs/recovery.md)
 - [Measured shell startup and prompt performance](docs/performance.md)
 

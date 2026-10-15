@@ -20,12 +20,18 @@ Private overrides under `$XDG_CONFIG_HOME/dotfiles/local/`:
 - `bash.sh`, `zsh.sh`: final interactive shell overrides.
 - `pre-bash.sh`, `pre-zsh.sh`: early interactive integration.
 - `login-bash.sh`, `login-zsh.sh` and their `pre-login-*` equivalents: login hooks.
-- `gitconfig`: private Git identity, credential helpers, conditional includes.
+- `gitconfig`: preserved legacy Git identity, credential helpers, conditional includes.
+- `git/config`: Git setup output, included after the legacy private file.
+- `git/setup-input.gitconfig`: owner-only native Git input for unattended setup.
 
 Overrides are deliberate user shell code. The lifecycle CLI never imports them
 into public source or publishes them. Put credentials in the system credential
 store or an independently configured secret manager. Set `DOTFILES_INIT_RVM=0`
 in private environment overrides to avoid initializing an installed RVM.
+
+Use [private Git setup](git.md) for identity, optional signing, secure credential
+helpers, and repository-directory profiles. Existing SSH configuration and keys
+remain in place. Git setup is separate from the dotfiles publication identity.
 
 ## Repository and publication settings
 
