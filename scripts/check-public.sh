@@ -32,7 +32,9 @@ if history.returncode:
 else:
     for record in history.stdout.splitlines():
         fields = record.split('\0')
-        if len(fields) != 4 or not public_identity(fields[0], fields[1]) or not public_identity(fields[2], fields[3]):
+        # GitHub signs web merges using this public service identity.
+        github_committer = len(fields) == 4 and fields[2:] == ['GitHub', 'noreply@github.com']
+        if len(fields) != 4 or not public_identity(fields[0], fields[1]) or not (public_identity(fields[2], fields[3]) or github_committer):
             errors.append('Reachable Git history contains nonpublic author or committer metadata')
             break
 for name in files:

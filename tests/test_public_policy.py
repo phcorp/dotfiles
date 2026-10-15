@@ -1,3 +1,4 @@
+import os
 import pathlib
 import shutil
 import subprocess
@@ -49,6 +50,29 @@ class PublicPolicy(unittest.TestCase):
         subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
         subprocess.run(['git', '-C', str(self.repo), '-c', 'core.hooksPath=/dev/null',
                         '-c', 'user.email=private@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+        result = self.scan()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('nonpublic author or committer', result.stderr)
+        self.assertNotIn('private@example.invalid', result.stderr)
+
+    def test_github_merge_committer_is_allowed(self):
+        (self.repo / 'README.md').write_text('public content\n')
+        subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'core.hooksPath=/dev/null',
+                        'commit', '-qm', 'public merge'], check=True,
+                       env=dict(os.environ, GIT_COMMITTER_NAME='GitHub',
+                                GIT_COMMITTER_EMAIL='noreply@github.com'))
+        result = self.scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_github_committer_does_not_allow_private_author(self):
+        (self.repo / 'README.md').write_text('public content\n')
+        subprocess.run(['git', '-C', str(self.repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'core.hooksPath=/dev/null',
+                        'commit', '-qm', 'private merge'], check=True,
+                       env=dict(os.environ, GIT_AUTHOR_EMAIL='private@example.invalid',
+                                GIT_COMMITTER_NAME='GitHub',
+                                GIT_COMMITTER_EMAIL='noreply@github.com'))
         result = self.scan()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('nonpublic author or committer', result.stderr)
