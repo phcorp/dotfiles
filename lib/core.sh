@@ -58,7 +58,7 @@ safe_target() {
 }
 setup_state() {
     valid_paths || return
-    mkdir -p "$DOTFILES_CONFIG/local" "$DOTFILES_STATE/originals" "$DOTFILES_STATE/logs" || return
+    mkdir -p "$XDG_CONFIG_HOME" "$DOTFILES_CONFIG/local" "$DOTFILES_STATE/originals" "$DOTFILES_STATE/logs" || return
     chmod 700 "$DOTFILES_CONFIG/local" "$DOTFILES_STATE" "$DOTFILES_STATE/originals" "$DOTFILES_STATE/logs" || return
     if [ ! -f "$DOTFILES_CONFIG/chezmoi.toml" ]; then printf 'progress = false\n' > "$DOTFILES_CONFIG/chezmoi.toml" || return; fi
     if [ ! -f "$DOTFILES_STATE/originals.list" ]; then : > "$DOTFILES_STATE/originals.list" || return; fi
@@ -70,7 +70,7 @@ lock_state() {
         if [ "$(lock_status "$_lifecycle_lock")" != absent ]; then lock_recover_stale "$_lifecycle_lock" || return; fi
     fi
     lock_acquire "$_lifecycle_lock" || { fail 'Lifecycle lock prevents this operation. Run dotfiles doctor for status and safe recovery instructions.'; return 1; }
-    trap '_result=$?; printf "%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_action:-operation}" "$_result" > "$DOTFILES_STATE/last-operation"; lock_release "$_lifecycle_lock" || :' EXIT
+    trap '_result=$?; printf "%s\t%s\t%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_action:-operation}" "$_result" > "$DOTFILES_STATE/last-operation"; lock_release "$_lifecycle_lock" || :; if command -v git_setup_cleanup >/dev/null 2>&1; then git_setup_cleanup; fi' EXIT
     trap 'exit 129' HUP
     trap 'exit 130' INT
     trap 'exit 143' TERM
@@ -180,6 +180,16 @@ commit_transaction() {
     mv "$_transaction/committed.new" "$_transaction/committed" || return
     rm -rf "$_transaction" || return
     _transaction_open=0
+}
+snapshot_target() {
+    safe_target "$1" || return
+    _snapshot_relative=${1#"$HOME/"}
+    if [ -e "$1" ] || [ -L "$1" ]; then
+        [ ! -d "$1" ] || [ -L "$1" ] || { fail 'Transaction target is a directory.'; return 1; }
+        mkdir -p "$_transaction/files/$(dirname "$_snapshot_relative")" || return
+        cp -Pp "$1" "$_transaction/files/$_snapshot_relative" || return
+    fi
+    printf '%s\n' "$1" >> "$_transaction/paths"
 }
 apply_files() {
     valid_paths || return
@@ -468,17 +478,32 @@ uninstall_files() {
     valid_paths || return
     sync_disable || return
     [ -f "$DOTFILES_STATE/managed.tsv" ] || { say 'No installed files to remove.'; return; }
+    _git_uninstall=0
+    _git_restored=0
+    if [ -f "$DOTFILES_CONFIG/local/git/config" ]; then
+        begin_transaction || return
+        _git_uninstall=1
+        while IFS="$(printf '\t')" read -r _digest _target; do
+            snapshot_target "$_target" || { recover_files; return 1; }
+        done < "$DOTFILES_STATE/managed.tsv"
+    fi
     _skipped=0
     : > "$DOTFILES_STATE/remaining.tsv"
     while IFS="$(printf '\t')" read -r _digest _target; do
-        if [ "$(hash_file "$_target")" = "$_digest" ]; then restore_original "$_target" || return
+        if [ "$(hash_file "$_target")" = "$_digest" ]; then
+            restore_original "$_target" || { [ "$_git_uninstall" = 0 ] || recover_files; return 1; }
+            [ "$_target" != "$HOME/.gitconfig" ] || _git_restored=1
         else
             printf '%s\t%s\n' "$_digest" "$_target" >> "$DOTFILES_STATE/remaining.tsv"
             say "Preserved modified file: ${_target#"$HOME/"}"; _skipped=1
         fi
     done < "$DOTFILES_STATE/managed.tsv"
+    if [ "$_git_restored" = 1 ] && [ "$_git_uninstall" = 1 ]; then
+        python3 "$DOTFILES_SOURCE/scripts/git-setup.py" retain || { recover_files; return 1; }
+    fi
     if [ "$_skipped" = 0 ]; then rm "$DOTFILES_STATE/managed.tsv" "$DOTFILES_STATE/remaining.tsv"
     else mv "$DOTFILES_STATE/remaining.tsv" "$DOTFILES_STATE/managed.tsv"; fi
+    [ "$_git_uninstall" = 0 ] || commit_transaction || return
     say 'Private overrides, backups, and installed tools retained.'
     [ "$_skipped" = 0 ]
 }
@@ -492,6 +517,7 @@ dotfiles apps list|install|update|remove [app|all] [--non-interactive] [--dry-ru
 dotfiles sync [--non-interactive] | sync enable|disable
 dotfiles publish "commit message" | doctor | recover [--unlock-stale]
 dotfiles mode interactive|non-interactive
+dotfiles git setup [--non-interactive] [--dry-run] | git status
 EOF
 }
 main() {
@@ -499,8 +525,9 @@ main() {
     # The explicit wizard is interactive even when first-use installs are unattended.
     [ "$_action" != wizard ] || DOTFILES_MODE=interactive
     _sub=; _arg=
-    case $_action in tools|apps|sync|mode) if [ $# -gt 0 ]; then case $1 in --*) ;; *) _sub=$1; shift ;; esac; fi ;;
+    case $_action in tools|apps|sync|mode|git) if [ $# -gt 0 ]; then case $1 in --*) ;; *) _sub=$1; shift ;; esac; fi ;;
         publish) _arg=${1:-}; [ $# = 0 ] || shift ;; esac
+    [ "$_action:$_sub" != git:setup ] || DOTFILES_MODE=interactive
     while [ $# -gt 0 ]; do
         case $1 in
             --non-interactive) DOTFILES_MODE=non-interactive ;;
@@ -521,6 +548,7 @@ main() {
         preview; return
     fi
     case $_action in
+        git) case $_sub in setup) git_setup ;; status) python3 "$DOTFILES_SOURCE/scripts/git-setup.py" status ;; *) fail 'Choose git setup or git status.'; return 1 ;; esac ;;
         tools) setup_state; case $_sub in list) tools_list ;; ensure) tools_ensure "$_arg" ;; install) tools_install "$_arg" ;; update) tools_update "$_arg" ;; remove) tools_remove "$_arg" ;; *) usage; return 1 ;; esac ;;
         apps) setup_state; apps_action "$_sub" "${_arg:-all}" ;;
         doctor) doctor ;;
@@ -558,13 +586,15 @@ wizard() {
     if [ "$DOTFILES_MODE" != interactive ] || [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
         fail 'Wizard requires a terminal; use scriptable subcommands.'; return 1
     fi
-    printf 'Dotfiles: 1 install, 2 update, 3 repair, 4 uninstall, 5 enable sync, 6 disable sync, 7 install apps, 8 update apps, 9 remove owned apps\nChoice [1]: ' > /dev/tty
+    printf 'Dotfiles: 1 install, 2 update, 3 repair, 4 uninstall, 5 enable sync, 6 disable sync, 7 install apps, 8 update apps, 9 remove owned apps, 10 configure Git\nChoice [1]: ' > /dev/tty
     IFS= read -r _choice < /dev/tty
     case ${_choice:-1} in
         1)
             printf 'Profiles (comma-separated: shell,runtimes,php,cloud,databases,desktop) [shell]: ' > /dev/tty
             IFS= read -r _profiles < /dev/tty
             main install --profiles "${_profiles:-shell}"
+            printf 'Review private Git setup? [Y/n]: ' > /dev/tty; IFS= read -r _git_review < /dev/tty
+            case $_git_review in n|N) ;; *) main git setup || return ;; esac
             printf 'Install selected tools now? [y/N]: ' > /dev/tty; IFS= read -r _eager < /dev/tty
             if [ "$_eager" = y ] || [ "$_eager" = Y ]; then
                 while IFS= read -r _tool; do tools_install "$_tool" || say "Could not install $_tool; use doctor/tools install later."; done < "$DOTFILES_CONFIG/tools"
@@ -580,6 +610,7 @@ wizard() {
                         tools_update "$_tool" || say "Could not upgrade $_tool; current installation retained."
                     done < "$DOTFILES_STATE/packages"
                 fi ;; esac ;;
+        10) main git setup ;;
         3) main repair ;;
         4) printf 'Restore managed files and retain private backups/tools? [y/N]: ' > /dev/tty; IFS= read -r _confirm < /dev/tty
             case $_confirm in y|Y) main uninstall ;; *) say 'Cancelled.' ;; esac ;;
