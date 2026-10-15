@@ -16,11 +16,13 @@ class GitInterruption(unittest.TestCase):
     write_input = fixture.GitSetup.write_input
     setup_git = fixture.GitSetup.setup_git
 
-    def prepare(self):
+    def prepare(self, absent_revision=False):
         self.install('[user]\n name = Fixture Original\n email = original@example.invalid\n')
         self.write_input('[user]\n name = Fixture First\n email = first@example.invalid\n')
         self.setup_git()
-        self.before = {path: path.read_bytes() for path in (
+        if absent_revision:
+            (self.state / 'applied-revision').unlink(missing_ok=True)
+        self.before = {path: path.read_bytes() if path.exists() else None for path in (
             self.output, self.state / 'git-setup.tsv', self.state / 'managed.tsv',
             self.home / '.gitconfig', self.state / 'applied-revision')}
         self.shims = self.home / 'shims'
@@ -80,7 +82,10 @@ runpy.run_path(script, run_name='__main__')
     def restored(self):
         self.cli('recover', '--unlock-stale', '--non-interactive')
         for path, data in self.before.items():
-            self.assertEqual(path.read_bytes(), data, str(path))
+            if data is None:
+                self.assertFalse(path.exists(), str(path))
+            else:
+                self.assertEqual(path.read_bytes(), data, str(path))
         self.assertFalse((self.state / 'transaction').exists())
         self.assertFalse(list((self.config / 'local/git').glob('*.new')))
         self.assertFalse((self.state / 'git-setup.tsv.new').exists())
@@ -97,7 +102,7 @@ runpy.run_path(script, run_name='__main__')
         self.assertIn(b'second@example.invalid', self.output.read_bytes())
 
     def test_uninstall_killed_after_original_restore_before_retained_include_recovers(self):
-        self.prepare()
+        self.prepare(absent_revision=True)
         self.interrupt('retain', 'uninstall')
         self.assertIn('original@example.invalid', (self.home / '.gitconfig').read_text())
         self.restored()
