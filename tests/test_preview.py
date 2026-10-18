@@ -228,3 +228,26 @@ sys.exit(subprocess.call([os.environ['DOTFILES_REAL_GIT'], *args]))
                     result = self.run_cli(action, operation, target)
                     self.assertRegex(result.stdout + result.stderr,
                                      r'(?i)INSTALL|UPDATE|REMOVE|BLOCKED|UNCHANGED|NEEDS(?:_| )?INFO')
+
+    def test_bundled_literal_zsh_braces_are_safe_to_preview(self):
+        target = self.source / 'home/dot_config/dotfiles/vendor/fzf-tab/literal.zsh'
+        target.write_text('# {{{ folding comment\nvalue=${outer:-${inner}}\n')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'literal zsh fixture')
+        result = self.run_cli('install', '--profiles', 'shell')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.status(result, 'CREATE', r'literal\.zsh')
+
+    def test_bundled_templates_and_metadata_cannot_execute_helpers(self):
+        command = self.base / 'template-side-effect'
+        command.write_text('#!/bin/sh\nprintf unsafe >> "$DOTFILES_FORBIDDEN_LOG"\n')
+        command.chmod(0o755)
+        vendor = self.source / 'home/dot_config/dotfiles/vendor/fzf-tab'
+        for name in ('unexpected.zsh.tmpl', '.chezmoiignore', 'run_before_unexpected'):
+            with self.subTest(name=name):
+                target = vendor / name
+                target.write_text('{{ output "' + str(command) + '" }}\n')
+                result = self.run_cli('install', '--profiles', 'shell')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Additional template capabilities', result.stdout + result.stderr)
+                target.unlink()

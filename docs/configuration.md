@@ -99,3 +99,21 @@ other AWS projects. Only the region is displayed, not account identities.
 Symfony console with quoted arguments. `tsplit` passes arguments to
 `tmux split-window`; `ssh-use-key` adds a key to an existing agent. Installed
 runtime managers and project runtime-version files retain their own behavior.
+
+## Zsh history and completion
+
+Type a command prefix and press Up/Down to browse matching history entries.
+With empty input, these keys browse all history; multiline input retains normal
+line navigation. Emacs and vi insert modes support both common arrow sequences.
+
+Tab completes commands, options, Git branches and paths using zsh's completion
+definitions, with case-insensitive and partial-word matching. Install the fuzzy
+picker dependency with `dotfiles tools install fzf`; then start a new shell.
+Tab first expands any shared prefix; press Tab again if candidates remain.
+The bundled fzf-tab v1.3.0 opens a searchable list for multiple candidates:
+type to filter, use arrows or Tab/Shift-Tab to navigate, Enter to accept, and
+Escape to cancel. Without fzf, Tab uses zsh's native selectable menu. Completion
+never installs tools or accesses the network during startup or selection.
+
+The final private `local/zsh.sh` hook can override these defaults. Integrations
+which replace the Tab widget there may also replace the fuzzy picker.

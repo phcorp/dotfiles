@@ -92,6 +92,15 @@ def safe_rendering():
                 return False
     for path in (SOURCE / 'home').rglob('*'):
         if path.is_file() and not path.is_symlink():
+            # Bundled zsh files are literal chezmoi inputs. Nested parameter
+            # expansions and folding comments contain template-like braces.
+            # Keep template attributes, scripts and chezmoi metadata guarded.
+            vendor = SOURCE / 'home/dot_config/dotfiles/vendor/fzf-tab'
+            if vendor in path.parents and all(
+                    not part.endswith('.tmpl') and
+                    not part.startswith(('.', 'run_', 'modify_', 'encrypted_'))
+                    for part in path.relative_to(vendor).parts):
+                continue
             text = path.read_text(errors='replace')
             if path == SOURCE / 'home/dot_gitconfig.tmpl':
                 for variable, suffix in (('XDG_CONFIG_HOME', 'git/ignore'), ('DOTFILES_CONFIG', 'local/gitconfig'), ('DOTFILES_CONFIG', 'local/git/config')):

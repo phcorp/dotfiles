@@ -21,10 +21,10 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == macOS ]]; then
-            brew install chezmoi shellcheck gitleaks starship
+            brew install chezmoi shellcheck gitleaks starship fzf
           else
             sudo apt-get update
-            sudo apt-get install -y zsh shellcheck
+            sudo apt-get install -y zsh shellcheck fzf
             ./bootstrap.sh --dependencies-only --non-interactive
             PATH="$HOME/.local/bin:$PATH" bin/dotfiles tools install starship --non-interactive
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
